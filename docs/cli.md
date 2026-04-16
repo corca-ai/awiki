@@ -144,6 +144,14 @@ Prints the build version string.
 `awiki` and `awiki help` print the top-level command list with each command's
 argument shape.
 
+When a page name contains spaces, quote it in the shell. For example:
+
+```sh
+awiki path "The China study (book)" "What to Eat"
+awiki rename "Old Note" "New Note"
+awiki links "Books Ive read"
+```
+
 Every command supports `-h`, `-help`, and `--help`.
 
 ## Related Docs

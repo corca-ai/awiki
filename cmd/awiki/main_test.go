@@ -95,9 +95,89 @@ func TestUsageIncludesCommandArguments(t *testing.T) {
 		"  awiki version\n" +
 		"      Print build version\n" +
 		"\n" +
+		"Examples:\n" +
+		"  awiki path \"The China study (book)\" \"What to Eat\"\n" +
+		"  awiki rename \"Old Note\" \"New Note\"\n" +
+		"  awiki links \"Books Ive read\"\n" +
+		"\n" +
 		"Use `awiki <command> -h` for command-specific help.\n"
 	if errOut.String() != want {
 		t.Fatalf("usage() output = %q, want %q", errOut.String(), want)
+	}
+}
+
+func TestPathHelpShowsQuotedExample(t *testing.T) {
+	oldStderr := stderr
+	var errOut bytes.Buffer
+	stderr = &errOut
+	t.Cleanup(func() {
+		stderr = oldStderr
+	})
+
+	if err := pathCmd([]string{"-h"}); err != nil {
+		t.Fatalf("pathCmd(-h) error = %v", err)
+	}
+
+	got := errOut.String()
+	wantParts := []string{
+		"Usage: awiki path [flags] <from> <to>",
+		"Quote document names that contain spaces.",
+		"awiki path \"The China study (book)\" \"What to Eat\"",
+	}
+	for _, want := range wantParts {
+		if !strings.Contains(got, want) {
+			t.Fatalf("path help missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestRenameHelpShowsQuotedExample(t *testing.T) {
+	oldStderr := stderr
+	var errOut bytes.Buffer
+	stderr = &errOut
+	t.Cleanup(func() {
+		stderr = oldStderr
+	})
+
+	if err := renameCmd([]string{"-h"}); err != nil {
+		t.Fatalf("renameCmd(-h) error = %v", err)
+	}
+
+	got := errOut.String()
+	wantParts := []string{
+		"Usage: awiki rename [flags] <old> <new>",
+		"Quote document names that contain spaces.",
+		"awiki rename \"Old Note\" \"New Note\"",
+	}
+	for _, want := range wantParts {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rename help missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestLinksHelpShowsQuotedExample(t *testing.T) {
+	oldStderr := stderr
+	var errOut bytes.Buffer
+	stderr = &errOut
+	t.Cleanup(func() {
+		stderr = oldStderr
+	})
+
+	if err := linksCmd([]string{"-h"}); err != nil {
+		t.Fatalf("linksCmd(-h) error = %v", err)
+	}
+
+	got := errOut.String()
+	wantParts := []string{
+		"Usage: awiki links [flags] <document>",
+		"Quote document names that contain spaces.",
+		"awiki links \"Books Ive read\"",
+	}
+	for _, want := range wantParts {
+		if !strings.Contains(got, want) {
+			t.Fatalf("links help missing %q in %q", want, got)
+		}
 	}
 }
 
