@@ -1,0 +1,7 @@
+.artifacts/
+/bin/
+.envrc
+mise.toml
+.tmp-bin/
+.claude/skills
+.agents/skills/awiki/

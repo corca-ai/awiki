@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+cleanup() { rm -rf .tmp-bin; }
+trap cleanup EXIT
+
+echo "Running tests..."
+./scripts/test.sh
+
+echo "Running lint..."
+./scripts/lint.sh
+
+echo "Building awiki..."
+mkdir -p .tmp-bin
+AWIKI_BUILD_OUTPUT=.tmp-bin/awiki AWIKI_SKIP_LINK=1 ./scripts/build.sh
