@@ -15,6 +15,7 @@ awiki lint
 awiki path "문서 A" "문서 B"
 awiki links "문서 A"
 awiki rename "예전 이름" "새 이름"
+awiki wanted
 ```
 
 ## Install
@@ -45,6 +46,7 @@ See [Install](install.md) for details.
 - `path` — print the shortest path between two documents
 - `rename` — rename a document and rewrite links to it
 - `links` — show inbound and outbound links for a document
+- `wanted` — rank the most-linked missing pages with source context
 - `version` — print the build version
 
 ## Related Docs

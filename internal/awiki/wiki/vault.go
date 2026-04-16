@@ -23,12 +23,27 @@ type LinkSummary struct {
 }
 
 type LintReport struct {
-	Orphans []string
-	Islands [][]string
+	DocumentCount        int
+	LargestComponentSize int
+	CoveredDocuments     int
+	Orphans              []string
+	Islands              [][]string
 }
 
 func (r LintReport) HasIssues() bool {
 	return len(r.Orphans) > 0 || len(r.Islands) > 0
+}
+
+func (r LintReport) LargestComponentRatio() float64 {
+	return ratio(r.LargestComponentSize, r.DocumentCount)
+}
+
+func (r LintReport) OrphanRate() float64 {
+	return ratio(len(r.Orphans), r.DocumentCount)
+}
+
+func (r LintReport) ContentCoverage() float64 {
+	return ratio(r.CoveredDocuments, r.DocumentCount)
 }
 
 type Vault struct {
@@ -39,6 +54,14 @@ type Vault struct {
 	directed    map[string]map[string]struct{}
 	inbound     map[string]map[string]struct{}
 	undirected  map[string]map[string]struct{}
+}
+
+type cacheState struct {
+	cache    vaultCache
+	ok       bool
+	dirty    bool
+	next     vaultCache
+	useCache bool
 }
 
 func Load(root string) (*Vault, error) {
@@ -52,100 +75,148 @@ func loadVault(root string, useCache bool) (*Vault, loadStats, error) {
 		return nil, loadStats{}, err
 	}
 
-	entries, err := os.ReadDir(absRoot)
+	entries, err := readSortedDirEntries(absRoot)
 	if err != nil {
 		return nil, loadStats{}, err
+	}
+
+	vault := newVault(absRoot)
+	cache := newCacheState(absRoot, useCache)
+	var stats loadStats
+
+	for _, entry := range entries {
+		cached, loaded, err := loadVaultEntry(vault, entry, cache)
+		if err != nil {
+			return nil, loadStats{}, err
+		}
+		if !loaded {
+			continue
+		}
+		if cached {
+			stats.CachedDocs++
+		} else {
+			stats.ParsedDocs++
+			cache.dirty = true
+		}
+	}
+
+	finalizeCacheState(absRoot, cache)
+
+	vault.buildIdentifiers()
+	vault.buildGraph()
+	return vault, stats, nil
+}
+
+func readSortedDirEntries(root string) ([]os.DirEntry, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
 		return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
 	})
+	return entries, nil
+}
 
-	vault := &Vault{
-		Root:        absRoot,
+func newVault(root string) *Vault {
+	return &Vault{
+		Root:        root,
 		docsByKey:   make(map[string]*Document),
 		identifiers: make(map[string][]*Document),
 		directed:    make(map[string]map[string]struct{}),
 		inbound:     make(map[string]map[string]struct{}),
 		undirected:  make(map[string]map[string]struct{}),
 	}
+}
 
-	var (
-		stats      loadStats
-		cache      vaultCache
-		cacheOK    bool
-		cacheDirty bool
-		nextCache  = vaultCache{
+func newCacheState(root string, useCache bool) *cacheState {
+	state := &cacheState{
+		useCache: useCache,
+		next: vaultCache{
 			Version: vaultCacheVersion,
-			Root:    absRoot,
+			Root:    root,
 			Docs:    make(map[string]cachedDocument),
-		}
-	)
-	if useCache {
-		cache, cacheOK = readVaultCache(absRoot)
-		if !cacheOK {
-			cacheDirty = true
-		}
+		},
+	}
+	if !useCache {
+		return state
 	}
 
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
-			continue
-		}
+	state.cache, state.ok = readVaultCache(root)
+	if !state.ok {
+		state.dirty = true
+	}
+	return state
+}
 
-		info, err := entry.Info()
-		if err != nil {
-			return nil, loadStats{}, err
-		}
+func finalizeCacheState(root string, state *cacheState) {
+	if !state.useCache {
+		return
+	}
+	if !state.dirty && (!state.ok || len(state.cache.Docs) != len(state.next.Docs)) {
+		state.dirty = true
+	}
+	if state.dirty {
+		writeVaultCache(root, state.next)
+	}
+}
 
-		filename := entry.Name()
-		path := filepath.Join(absRoot, entry.Name())
-		name := strings.TrimSuffix(filename, filepath.Ext(filename))
-		key := documentKey(name)
-		if key == "" {
-			return nil, loadStats{}, fmt.Errorf("invalid document name %q", entry.Name())
-		}
-		if existing, ok := vault.docsByKey[key]; ok {
-			return nil, loadStats{}, fmt.Errorf("duplicate document names %q and %q", existing.Name, name)
-		}
-
-		doc, cached, err := loadDocument(path, filename, name, key, info, cache)
-		if err != nil {
-			return nil, loadStats{}, err
-		}
-		if cached {
-			stats.CachedDocs++
-		} else {
-			stats.ParsedDocs++
-			cacheDirty = true
-		}
-
-		vault.Documents = append(vault.Documents, doc)
-		vault.docsByKey[key] = doc
-		nextCache.Docs[filename] = cachedDocument{
-			Filename:    filename,
-			Name:        doc.Name,
-			Key:         doc.Key,
-			MTimeNS:     info.ModTime().UnixNano(),
-			Size:        info.Size(),
-			Excerpt:     doc.Excerpt,
-			FrontMatter: doc.FrontMatter,
-			Links:       cloneLinks(doc.Links),
-		}
+func loadVaultEntry(vault *Vault, entry os.DirEntry, state *cacheState) (cached, loaded bool, err error) {
+	if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+		return false, false, nil
 	}
 
-	if useCache {
-		if !cacheDirty && (!cacheOK || len(cache.Docs) != len(nextCache.Docs)) {
-			cacheDirty = true
-		}
-		if cacheDirty {
-			writeVaultCache(absRoot, nextCache)
-		}
+	info, err := entry.Info()
+	if err != nil {
+		return false, false, err
 	}
 
-	vault.buildIdentifiers()
-	vault.buildGraph()
-	return vault, stats, nil
+	filename := entry.Name()
+	path := filepath.Join(vault.Root, filename)
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	key, err := validateDocumentKey(vault, filename, name)
+	if err != nil {
+		return false, false, err
+	}
+
+	doc, cached, err := loadDocument(path, filename, name, key, info, state.cache)
+	if err != nil {
+		return false, false, err
+	}
+
+	addDocumentToVault(vault, doc)
+	state.next.Docs[filename] = cachedDocumentFor(doc, filename, info)
+	return cached, true, nil
+}
+
+func validateDocumentKey(vault *Vault, filename, name string) (string, error) {
+	key := documentKey(name)
+	if key == "" {
+		return "", fmt.Errorf("invalid document name %q", filename)
+	}
+	if existing, ok := vault.docsByKey[key]; ok {
+		return "", fmt.Errorf("duplicate document names %q and %q", existing.Name, name)
+	}
+	return key, nil
+}
+
+func addDocumentToVault(vault *Vault, doc *Document) {
+	vault.Documents = append(vault.Documents, doc)
+	vault.docsByKey[doc.Key] = doc
+}
+
+func cachedDocumentFor(doc *Document, filename string, info os.FileInfo) cachedDocument {
+	return cachedDocument{
+		Filename:    filename,
+		Name:        doc.Name,
+		Key:         doc.Key,
+		MTimeNS:     info.ModTime().UnixNano(),
+		Size:        info.Size(),
+		Excerpt:     doc.Excerpt,
+		FrontMatter: doc.FrontMatter,
+		Links:       cloneLinks(doc.Links),
+	}
 }
 
 func loadDocument(path, filename, name, key string, info os.FileInfo, cache vaultCache) (*Document, bool, error) {
@@ -183,6 +254,9 @@ func (v *Vault) ResolveDocument(identifier string) (*Document, error) {
 	key := documentKey(identifier)
 	if key == "" {
 		return nil, fmt.Errorf("document %q not found", identifier)
+	}
+	if doc, ok := v.docsByKey[key]; ok {
+		return doc, nil
 	}
 
 	docs := uniqueDocuments(v.identifiers[key])
@@ -301,11 +375,17 @@ func (v *Vault) shortestPathBetweenKeys(fromKey, toKey string) ([]string, error)
 }
 
 func (v *Vault) Lint() LintReport {
-	report := LintReport{}
+	report := LintReport{
+		DocumentCount: len(v.Documents),
+	}
 	visited := make(map[string]bool, len(v.Documents))
 	var components [][]string
 
 	for _, doc := range v.Documents {
+		if strings.TrimSpace(doc.Excerpt) != "" {
+			report.CoveredDocuments++
+		}
+
 		neighbors := v.undirected[doc.Key]
 		if len(neighbors) == 0 {
 			report.Orphans = append(report.Orphans, doc.Name)
@@ -330,6 +410,11 @@ func (v *Vault) Lint() LintReport {
 	})
 	if len(components) > 1 {
 		report.Islands = components[1:]
+	}
+	if len(components) > 0 {
+		report.LargestComponentSize = len(components[0])
+	} else if len(report.Orphans) > 0 {
+		report.LargestComponentSize = 1
 	}
 
 	return report
@@ -506,4 +591,11 @@ func sortNames(names []string) {
 	sort.Slice(names, func(i, j int) bool {
 		return strings.ToLower(names[i]) < strings.ToLower(names[j])
 	})
+}
+
+func ratio(count, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(count) / float64(total)
 }

@@ -75,6 +75,102 @@ source: '[delta](Delta.md#Section)'
 	}
 }
 
+func TestResolveDocumentAcceptsTitleAndAlias(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Alpha.md"), `---
+title: Alpha Title
+aliases:
+  - Alpha Alias
+---
+Alpha summary.
+`)
+
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	doc, err := vault.ResolveDocument("Alpha Title")
+	if err != nil {
+		t.Fatalf("ResolveDocument(Alpha Title) error = %v", err)
+	}
+	if doc.Name != "Alpha" {
+		t.Fatalf("ResolveDocument(Alpha Title) = %q, want %q", doc.Name, "Alpha")
+	}
+
+	doc, err = vault.ResolveDocument("Alpha Alias")
+	if err != nil {
+		t.Fatalf("ResolveDocument(Alpha Alias) error = %v", err)
+	}
+	if doc.Name != "Alpha" {
+		t.Fatalf("ResolveDocument(Alpha Alias) = %q, want %q", doc.Name, "Alpha")
+	}
+}
+
+func TestLinksDoNotResolveByTitleOrAlias(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Alpha.md"), `---
+title: Alpha Title
+aliases:
+  - Alpha Alias
+---
+Alpha summary.
+`)
+	writeFile(t, filepath.Join(dir, "RefByTitle.md"), "[[Alpha Title]]\n")
+	writeFile(t, filepath.Join(dir, "RefByAlias.md"), "[[Alpha Alias]]\n")
+
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if inbound := vault.InboundNames("Alpha"); len(inbound) != 0 {
+		t.Fatalf("InboundNames(Alpha) = %#v, want []", inbound)
+	}
+
+	outbound := vault.OutboundSummaries("RefByTitle")
+	if len(outbound) != 1 || outbound[0].Name != "Alpha Title" || !outbound[0].Missing {
+		t.Fatalf("OutboundSummaries(RefByTitle) = %#v, want missing Alpha Title", outbound)
+	}
+
+	outbound = vault.OutboundSummaries("RefByAlias")
+	if len(outbound) != 1 || outbound[0].Name != "Alpha Alias" || !outbound[0].Missing {
+		t.Fatalf("OutboundSummaries(RefByAlias) = %#v, want missing Alpha Alias", outbound)
+	}
+}
+
+func TestCanonicalNameBeatsConflictingTitle(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Alpha.md"), "")
+	writeFile(t, filepath.Join(dir, "Beta.md"), `---
+title: Alpha
+---
+`)
+	writeFile(t, filepath.Join(dir, "Ref.md"), "[[Alpha]]\n")
+
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	doc, err := vault.ResolveDocument("Alpha")
+	if err != nil {
+		t.Fatalf("ResolveDocument() error = %v", err)
+	}
+	if doc.Name != "Alpha" {
+		t.Fatalf("ResolveDocument() = %q, want %q", doc.Name, "Alpha")
+	}
+
+	inbound := vault.InboundNames("Alpha")
+	if len(inbound) != 1 || inbound[0] != "Ref" {
+		t.Fatalf("InboundNames() = %#v, want [Ref]", inbound)
+	}
+
+	if inbound := vault.InboundNames("Beta"); len(inbound) != 0 {
+		t.Fatalf("InboundNames(Beta) = %#v, want []", inbound)
+	}
+}
+
 func TestLoadMatchesUnicodeNormalizedNames(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, norm.NFD.String("홍익대학교")+".md"), "")
@@ -362,6 +458,40 @@ func TestLintFindsOrphansAndIslands(t *testing.T) {
 	}
 }
 
+func TestLintReportsQualityMetrics(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Alpha.md"), "Alpha summary.\n\n[[Beta]]\n")
+	writeFile(t, filepath.Join(dir, "Beta.md"), "")
+	writeFile(t, filepath.Join(dir, "Gamma.md"), "Gamma summary.\n\n[[Delta]]\n")
+	writeFile(t, filepath.Join(dir, "Delta.md"), "Delta summary.\n")
+	writeFile(t, filepath.Join(dir, "Orphan.md"), "[[Missing]]\n")
+
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	report := vault.Lint()
+	if report.DocumentCount != 5 {
+		t.Fatalf("DocumentCount = %d, want 5", report.DocumentCount)
+	}
+	if report.LargestComponentSize != 2 {
+		t.Fatalf("LargestComponentSize = %d, want 2", report.LargestComponentSize)
+	}
+	if report.CoveredDocuments != 4 {
+		t.Fatalf("CoveredDocuments = %d, want 4", report.CoveredDocuments)
+	}
+	if report.LargestComponentRatio() != 2.0/5.0 {
+		t.Fatalf("LargestComponentRatio() = %v, want %v", report.LargestComponentRatio(), 2.0/5.0)
+	}
+	if report.OrphanRate() != 1.0/5.0 {
+		t.Fatalf("OrphanRate() = %v, want %v", report.OrphanRate(), 1.0/5.0)
+	}
+	if report.ContentCoverage() != 4.0/5.0 {
+		t.Fatalf("ContentCoverage() = %v, want %v", report.ContentCoverage(), 4.0/5.0)
+	}
+}
+
 func TestShortestPathUsesUndirectedGraph(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "Alpha.md"), "[[Beta]]\n")
@@ -386,6 +516,44 @@ func TestShortestPathUsesUndirectedGraph(t *testing.T) {
 	}
 	if dir := vault.EdgeDirection("Beta", "Gamma"); dir != "<-" {
 		t.Fatalf("EdgeDirection(Beta, Gamma) = %q, want %q", dir, "<-")
+	}
+}
+
+func TestWantedPagesRanksMissingTargetsAndKeepsLineContext(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Doc1.md"), "First paragraph with [[Wanted A]].\ncontinues here.\n\nAnother paragraph with [[Wanted B]].\n")
+	writeFile(t, filepath.Join(dir, "Doc2.md"), "Another paragraph with [[Wanted A]] and [[Wanted A]] again.\n")
+
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	pages := vault.WantedPages(10)
+	if len(pages) != 2 {
+		t.Fatalf("len(WantedPages()) = %d, want 2", len(pages))
+	}
+
+	first := pages[0]
+	if first.Name != "Wanted A" || first.Mentions != 3 || first.SourceDocuments != 2 {
+		t.Fatalf("WantedPages()[0] = %#v, want Wanted A mentions=3 source_documents=2", first)
+	}
+	if len(first.Sources) != 2 {
+		t.Fatalf("len(WantedPages()[0].Sources) = %d, want 2", len(first.Sources))
+	}
+	if first.Sources[0].Document != "Doc2" || first.Sources[0].Context != "Another paragraph with [[Wanted A]] and [[Wanted A]] again." {
+		t.Fatalf("WantedPages()[0].Sources[0] = %#v", first.Sources[0])
+	}
+	if first.Sources[1].Document != "Doc1" || first.Sources[1].Context != "First paragraph with [[Wanted A]]." {
+		t.Fatalf("WantedPages()[0].Sources[1] = %#v", first.Sources[1])
+	}
+
+	second := pages[1]
+	if second.Name != "Wanted B" || second.Mentions != 1 || second.SourceDocuments != 1 {
+		t.Fatalf("WantedPages()[1] = %#v, want Wanted B mentions=1 source_documents=1", second)
+	}
+	if len(second.Sources) != 1 || second.Sources[0].Document != "Doc1" || second.Sources[0].Context != "Another paragraph with [[Wanted B]]." {
+		t.Fatalf("WantedPages()[1].Sources = %#v", second.Sources)
 	}
 }
 

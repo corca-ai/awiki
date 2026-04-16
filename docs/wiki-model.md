@@ -10,8 +10,8 @@ Subdirectories are ignored on purpose.
 - the canonical document name is the filename without the `.md` suffix
 - names are matched case-insensitively
 - Unicode-equivalent names are matched after normalization, so composed and decomposed forms resolve to the same document
-- front matter `title` is also treated as an identifier
-- front matter `aliases` are also treated as identifiers
+- front matter `title` may be used for direct document lookup
+- front matter `aliases` may be used for direct document lookup
 - ambiguous identifiers fail instead of guessing
 
 ## Front Matter
@@ -31,6 +31,9 @@ Supported keys:
 
 Resolved links contribute to graph connectivity only when they point to an
 existing document.
+
+Link resolution only matches canonical filenames. Front matter `title` and
+`aliases` do not affect link resolution or graph analysis.
 
 Supported link forms:
 
@@ -56,7 +59,7 @@ The same forms are recognized in front matter values and in the Markdown body.
 - self-links for graph connectivity
 
 Broken links are preserved because they are useful placeholders in a wiki
-gardening workflow.
+gardening workflow and for ranking missing pages with `wanted`.
 
 ## Graph Rules
 
@@ -65,6 +68,7 @@ gardening workflow.
 - an island is a connected component outside the largest component
 - `path` uses the same undirected graph
 - `links` shows resolved links first, then missing outbound links
+- `wanted` ranks unresolved links by missing target page
 
 ## Rename Rules
 

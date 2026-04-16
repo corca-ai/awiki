@@ -37,6 +37,7 @@ This package owns the wiki model and behavior.
 - flat-file only: only top-level `.md` files are considered documents
 - identifier resolution is case-insensitive
 - identifier resolution normalizes Unicode so macOS and Linux filenames resolve consistently
+- graph connectivity resolves links by canonical filename only; front matter `title` and `aliases` do not participate
 - parsed vault state is cached under the user cache directory and invalidated by file `mtime` and size changes
 - broken links are allowed and preserved
 - graph connectivity ignores unresolved links and self-links

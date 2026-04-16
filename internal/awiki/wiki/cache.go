@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	vaultCacheVersion = 3
-	vaultCacheDir     = "v3"
+	vaultCacheVersion = 5
+	vaultCacheDir     = "v5"
 )
 
 var userCacheDir = os.UserCacheDir
@@ -65,7 +65,9 @@ func readVaultCache(root string) (vaultCache, bool) {
 	if err != nil {
 		return vaultCache{}, false
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	var cache vaultCache
 	if err := gob.NewDecoder(file).Decode(&cache); err != nil {

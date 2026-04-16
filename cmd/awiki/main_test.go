@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,27 +78,26 @@ func TestUsageIncludesCommandArguments(t *testing.T) {
 	usage()
 
 	want := "" +
-		"Usage: awiki <command> [args]\n" +
+		"awiki helps maintain the quality of a flat-file Markdown wiki.\n" +
+		"Quality here means keeping notes well connected, reducing orphans and disconnected islands, keeping most pages inside one large component,\n" +
+		"avoiding empty stubs, and making long paths and heavily linked missing pages easy to inspect.\n" +
 		"\n" +
 		"Commands:\n" +
-		"  awiki help\n" +
-		"      Show this help\n" +
 		"  awiki lint [flags]\n" +
 		"      Validate the wiki graph\n" +
 		"  awiki avg-shortest-path [flags]\n" +
-		"      Estimate average shortest path length\n" +
+		"      Estimate average shortest path length and print sampled long paths\n" +
 		"  awiki path [flags] <from> <to>\n" +
 		"      Print the shortest path between two documents\n" +
 		"  awiki rename [flags] <old> <new>\n" +
 		"      Rename a document and update links to it\n" +
 		"  awiki links [flags] <document>\n" +
 		"      Show inbound and outbound links for a document\n" +
-		"  awiki version\n" +
-		"      Print build version\n" +
+		"  awiki wanted [flags]\n" +
+		"      Show the most-linked missing pages\n" +
 		"\n" +
 		"Examples:\n" +
 		"  awiki path \"The China study (book)\" \"What to Eat\"\n" +
-		"  awiki rename \"Old Note\" \"New Note\"\n" +
 		"  awiki links \"Books Ive read\"\n" +
 		"\n" +
 		"Use `awiki <command> -h` for command-specific help.\n"
@@ -181,6 +181,56 @@ func TestLinksHelpShowsQuotedExample(t *testing.T) {
 	}
 }
 
+func TestAvgShortestPathHelpMentionsLongPaths(t *testing.T) {
+	oldStderr := stderr
+	var errOut bytes.Buffer
+	stderr = &errOut
+	t.Cleanup(func() {
+		stderr = oldStderr
+	})
+
+	if err := avgShortestPathCmd([]string{"-h"}); err != nil {
+		t.Fatalf("avgShortestPathCmd(-h) error = %v", err)
+	}
+
+	got := errOut.String()
+	wantParts := []string{
+		"Usage: awiki avg-shortest-path [flags]",
+		"Estimate the average shortest path length on the largest connected component",
+		"and print sampled longer-than-average paths.",
+	}
+	for _, want := range wantParts {
+		if !strings.Contains(got, want) {
+			t.Fatalf("avg-shortest-path help missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestWantedHelpMentionsParagraphs(t *testing.T) {
+	oldStderr := stderr
+	var errOut bytes.Buffer
+	stderr = &errOut
+	t.Cleanup(func() {
+		stderr = oldStderr
+	})
+
+	if err := wantedCmd([]string{"-h"}); err != nil {
+		t.Fatalf("wantedCmd(-h) error = %v", err)
+	}
+
+	got := errOut.String()
+	wantParts := []string{
+		"Usage: awiki wanted [flags]",
+		"Show the most-linked missing pages and the lines that reference them.",
+		"awiki wanted -n 10",
+	}
+	for _, want := range wantParts {
+		if !strings.Contains(got, want) {
+			t.Fatalf("wanted help missing %q in %q", want, got)
+		}
+	}
+}
+
 func TestFormatLintReport(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "Orphan.md"), "Orphan summary.\n")
@@ -193,14 +243,42 @@ func TestFormatLintReport(t *testing.T) {
 	}
 
 	report := wiki.LintReport{
-		Orphans: []string{"Orphan"},
-		Islands: [][]string{{"IslandA", "IslandB"}},
+		DocumentCount:        3,
+		LargestComponentSize: 2,
+		CoveredDocuments:     3,
+		Orphans:              []string{"Orphan"},
+		Islands:              [][]string{{"IslandA", "IslandB"}},
 	}
 
 	got := formatLintReport(vault, report)
-	want := "// lint_failed orphans=1 islands=1\n// orphan\n[[Orphan]]: Orphan summary.\n// island=1\n[[IslandA]]: Island A summary.\n[[IslandB]]: Island B summary."
+	want := "// lint_failed documents=3 orphans=1 islands=1 largest_component_ratio=0.6667 orphan_rate=0.3333 content_coverage=1.0000\n// orphan\n[[Orphan]]: Orphan summary.\n// island=1\n[[IslandA]]: Island A summary.\n[[IslandB]]: Island B summary."
 	if got != want {
 		t.Fatalf("formatLintReport() = %q, want %q", got, want)
+	}
+}
+
+func TestLintCmdPrintsMetricsOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "Alpha.md"), "Alpha summary.\n\n[[Beta]]\n")
+	writeTestFile(t, filepath.Join(dir, "Beta.md"), "Beta summary.\n")
+
+	oldStdout, oldStderr := stdout, stderr
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	stdout = &out
+	stderr = &errOut
+	t.Cleanup(func() {
+		stdout = oldStdout
+		stderr = oldStderr
+	})
+
+	if err := lintCmd([]string{"-root", dir}); err != nil {
+		t.Fatalf("lintCmd() error = %v", err)
+	}
+
+	want := "// ok connected_graph documents=2 largest_component_ratio=1.0000 orphan_rate=0.0000 content_coverage=1.0000\n"
+	if out.String() != want {
+		t.Fatalf("lintCmd() output = %q, want %q", out.String(), want)
 	}
 }
 
@@ -353,6 +431,72 @@ func TestAvgShortestPathCmdDoesNotTruncateLongPaths(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("avgShortestPathCmd() output missing %q in %q", want, got)
 		}
+	}
+}
+
+func TestWantedCmd(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "Doc1.md"), "First paragraph with [[Wanted A]].\ncontinues here.\n\nAnother paragraph with [[Wanted B]].\n")
+	writeTestFile(t, filepath.Join(dir, "Doc2.md"), "Another paragraph with [[Wanted A]] and [[Wanted A]] again.\n")
+
+	oldStdout, oldStderr := stdout, stderr
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	stdout = &out
+	stderr = &errOut
+	t.Cleanup(func() {
+		stdout = oldStdout
+		stderr = oldStderr
+	})
+
+	if err := wantedCmd([]string{"-root", dir}); err != nil {
+		t.Fatalf("wantedCmd() error = %v", err)
+	}
+
+	want := "" +
+		"[[Wanted A]] (3 links)\n" +
+		"\n" +
+		"- [[Doc2]]: Another paragraph with [[Wanted A]] and [[Wanted A]] again.\n" +
+		"- [[Doc1]]: First paragraph with [[Wanted A]].\n" +
+		"\n" +
+		"[[Wanted B]] (1 link)\n" +
+		"\n" +
+		"- [[Doc1]]: Another paragraph with [[Wanted B]].\n"
+	if out.String() != want {
+		t.Fatalf("wantedCmd() output = %q, want %q", out.String(), want)
+	}
+}
+
+func TestWantedCmdTruncatesLongSourceLists(t *testing.T) {
+	dir := t.TempDir()
+	for i := 1; i <= wantedSourcePreviewLimit+1; i++ {
+		name := fmt.Sprintf("Doc%02d", i)
+		writeTestFile(t, filepath.Join(dir, name+".md"), fmt.Sprintf("[[Wanted A]] from %s.\n", name))
+	}
+
+	oldStdout, oldStderr := stdout, stderr
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	stdout = &out
+	stderr = &errOut
+	t.Cleanup(func() {
+		stdout = oldStdout
+		stderr = oldStderr
+	})
+
+	if err := wantedCmd([]string{"-root", dir}); err != nil {
+		t.Fatalf("wantedCmd() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "[[Wanted A]] (11 links)\n\n") {
+		t.Fatalf("wantedCmd() output missing header in %q", got)
+	}
+	if !strings.Contains(got, "_ ...\n") {
+		t.Fatalf("wantedCmd() output missing ellipsis in %q", got)
+	}
+	if strings.Count(got, "- [[Doc") != wantedSourcePreviewLimit {
+		t.Fatalf("wantedCmd() printed %d source bullets, want %d in %q", strings.Count(got, "- [[Doc"), wantedSourcePreviewLimit, got)
 	}
 }
 

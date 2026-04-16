@@ -20,6 +20,7 @@ type Link struct {
 	DisplayTarget string
 	TargetKey     string
 	Resolved      string
+	Context       string
 }
 
 var (
@@ -30,11 +31,11 @@ var (
 func ParseLinks(content string) []Link {
 	fm := ParseFrontMatter(content)
 	if !fm.Present {
-		return parseLinkLines(scanLines(content), true)
+		return parseBodyLinks(scanLines(content))
 	}
 
-	links := parseLinkLines(scanLines(content[:fm.BodyOffset]), false)
-	links = append(links, parseLinkLines(scanLines(content[fm.BodyOffset:]), true)...)
+	links := parseFrontMatterLinks(scanLines(content[:fm.BodyOffset]))
+	links = append(links, parseBodyLinks(scanLines(content[fm.BodyOffset:]))...)
 	return links
 }
 
@@ -62,7 +63,24 @@ func RewriteDocumentLinks(content, oldName, newName string) (rewritten string, c
 	return head + body, changes
 }
 
-func parseLinkLines(lines []textLine, respectFences bool) []Link {
+func parseFrontMatterLinks(lines []textLine) []Link {
+	var links []Link
+	for _, line := range lines {
+		lineLinks := parseLinksInLine(line.text)
+		if len(lineLinks) == 0 {
+			continue
+		}
+
+		context := normalizeLinkContext([]string{trimLine(line.text)})
+		for i := range lineLinks {
+			lineLinks[i].Context = context
+		}
+		links = append(links, lineLinks...)
+	}
+	return links
+}
+
+func parseBodyLinks(lines []textLine) []Link {
 	var (
 		links      []Link
 		inFence    bool
@@ -71,28 +89,67 @@ func parseLinkLines(lines []textLine, respectFences bool) []Link {
 	)
 
 	for _, line := range lines {
-		if respectFences {
-			trimmed := strings.TrimSpace(trimLine(line.text))
-			if marker, width, ok := fenceStart(trimmed); ok {
-				if inFence && marker == fenceRune && width >= fenceWidth {
-					inFence = false
-				} else if !inFence {
-					inFence = true
-					fenceRune = marker
-					fenceWidth = width
-				}
-				continue
-			}
-			if inFence {
-				continue
-			}
+		lineLinks, nextInFence, nextFenceRune, nextFenceWidth := parseBodyLineLinks(
+			line,
+			inFence,
+			fenceRune,
+			fenceWidth,
+		)
+		inFence = nextInFence
+		fenceRune = nextFenceRune
+		fenceWidth = nextFenceWidth
+		if len(lineLinks) == 0 {
+			continue
 		}
-
-		links = append(links, parseWikiLinks(line.text)...)
-		links = append(links, parseMarkdownLinks(line.text)...)
+		links = append(links, lineLinks...)
 	}
 
 	return links
+}
+
+func parseBodyLineLinks(line textLine, inFence bool, fenceRune rune, fenceWidth int) (links []Link, nextInFence bool, nextFenceRune rune, nextFenceWidth int) {
+	trimmed := strings.TrimSpace(trimLine(line.text))
+	if marker, width, ok := fenceStart(trimmed); ok {
+		nextInFence, nextFenceRune, nextFenceWidth = nextFenceState(inFence, fenceRune, fenceWidth, marker, width)
+		return nil, nextInFence, nextFenceRune, nextFenceWidth
+	}
+	if inFence || trimmed == "" {
+		return nil, inFence, fenceRune, fenceWidth
+	}
+
+	lineLinks := parseLinksInLine(line.text)
+	if len(lineLinks) == 0 {
+		return nil, inFence, fenceRune, fenceWidth
+	}
+
+	context := normalizeLinkContext([]string{trimmed})
+	for i := range lineLinks {
+		lineLinks[i].Context = context
+	}
+	return lineLinks, inFence, fenceRune, fenceWidth
+}
+
+func nextFenceState(inFence bool, fenceRune rune, fenceWidth int, marker rune, width int) (nextInFence bool, nextFenceRune rune, nextFenceWidth int) {
+	if inFence && marker == fenceRune && width >= fenceWidth {
+		return false, fenceRune, fenceWidth
+	}
+	if !inFence {
+		return true, marker, width
+	}
+	return inFence, fenceRune, fenceWidth
+}
+
+func parseLinksInLine(line string) []Link {
+	links := parseWikiLinks(line)
+	links = append(links, parseMarkdownLinks(line)...)
+	return links
+}
+
+func normalizeLinkContext(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	return normalizePreviewLine(strings.Join(lines, " "))
 }
 
 func rewriteLinkLines(lines []textLine, oldKey, newName string, respectFences bool) (rewritten string, changes int) {

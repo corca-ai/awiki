@@ -18,6 +18,13 @@ var (
 	stderr io.Writer = os.Stderr
 )
 
+const wantedSourcePreviewLimit = 10
+
+type wantedOptions struct {
+	root  string
+	limit int
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -38,6 +45,8 @@ func main() {
 		err = renameCmd(os.Args[2:])
 	case "links":
 		err = linksCmd(os.Args[2:])
+	case "wanted":
+		err = wantedCmd(os.Args[2:])
 	case "version", "--version", "-version":
 		outln(version)
 	default:
@@ -51,27 +60,26 @@ func main() {
 }
 
 func usage() {
-	errln("Usage: awiki <command> [args]")
+	errln("awiki helps maintain the quality of a flat-file Markdown wiki.")
+	errln("Quality here means keeping notes well connected, reducing orphans and disconnected islands, keeping most pages inside one large component,")
+	errln("avoiding empty stubs, and making long paths and heavily linked missing pages easy to inspect.")
 	errln("")
 	errln("Commands:")
-	errln("  awiki help")
-	errln("      Show this help")
 	errln("  awiki lint [flags]")
 	errln("      Validate the wiki graph")
 	errln("  awiki avg-shortest-path [flags]")
-	errln("      Estimate average shortest path length")
+	errln("      Estimate average shortest path length and print sampled long paths")
 	errln("  awiki path [flags] <from> <to>")
 	errln("      Print the shortest path between two documents")
 	errln("  awiki rename [flags] <old> <new>")
 	errln("      Rename a document and update links to it")
 	errln("  awiki links [flags] <document>")
 	errln("      Show inbound and outbound links for a document")
-	errln("  awiki version")
-	errln("      Print build version")
+	errln("  awiki wanted [flags]")
+	errln("      Show the most-linked missing pages")
 	errln("")
 	errln("Examples:")
 	errln("  awiki path \"The China study (book)\" \"What to Eat\"")
-	errln("  awiki rename \"Old Note\" \"New Note\"")
 	errln("  awiki links \"Books Ive read\"")
 	errln("")
 	errln("Use `awiki <command> -h` for command-specific help.")
@@ -106,6 +114,7 @@ func lintCmd(args []string) error {
 		errln("Usage: awiki lint [flags]")
 		errln("")
 		errln("Fail if the wiki contains orphan documents or disconnected islands.")
+		errln("Also prints largest_component_ratio, orphan_rate, and content_coverage.")
 		errln("")
 		errln("Flags:")
 		fs.PrintDefaults()
@@ -130,7 +139,13 @@ func lintCmd(args []string) error {
 	}
 
 	printer := newOutputFormatter()
-	printer.printComment(fmt.Sprintf("ok connected_graph documents=%d", len(vault.Documents)))
+	printer.printComment(fmt.Sprintf(
+		"ok connected_graph documents=%d largest_component_ratio=%.4f orphan_rate=%.4f content_coverage=%.4f",
+		report.DocumentCount,
+		report.LargestComponentRatio(),
+		report.OrphanRate(),
+		report.ContentCoverage(),
+	))
 	return nil
 }
 
@@ -193,7 +208,8 @@ func avgShortestPathCmd(args []string) error {
 	fs.Usage = func() {
 		errln("Usage: awiki avg-shortest-path [flags]")
 		errln("")
-		errln("Estimate the average shortest path length on the largest connected component.")
+		errln("Estimate the average shortest path length on the largest connected component")
+		errln("and print sampled longer-than-average paths.")
 		errln("")
 		errln("Flags:")
 		fs.PrintDefaults()
@@ -340,6 +356,97 @@ func linksCmd(args []string) error {
 	return nil
 }
 
+func wantedCmd(args []string) error {
+	options, err := parseWantedOptions(args)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+
+	vault, err := wiki.Load(options.root)
+	if err != nil {
+		return err
+	}
+
+	printWantedPages(newOutputFormatter(), limitWantedPages(vault.AllWantedPages(), options.limit))
+	return nil
+}
+
+func parseWantedOptions(args []string) (wantedOptions, error) {
+	fs := flag.NewFlagSet("wanted", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		errln("Usage: awiki wanted [flags]")
+		errln("")
+		errln("Show the most-linked missing pages and the lines that reference them.")
+		errln("")
+		errln("Example:")
+		errln("  awiki wanted -n 10")
+		errln("")
+		errln("Flags:")
+		fs.PrintDefaults()
+	}
+
+	root := fs.String("root", ".", "Path to wiki root")
+	limit := fs.Int("n", 10, "Number of missing pages to print")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return wantedOptions{}, flag.ErrHelp
+		}
+		return wantedOptions{}, err
+	}
+	if len(fs.Args()) != 0 {
+		fs.Usage()
+		return wantedOptions{}, errors.New("wanted does not accept positional arguments")
+	}
+	if *limit < 0 {
+		return wantedOptions{}, errors.New("wanted limit must not be negative")
+	}
+
+	return wantedOptions{
+		root:  *root,
+		limit: *limit,
+	}, nil
+}
+
+func limitWantedPages(pages []wiki.WantedPage, limit int) []wiki.WantedPage {
+	if limit <= 0 {
+		return nil
+	}
+	if len(pages) > limit {
+		return pages[:limit]
+	}
+	return pages
+}
+
+func printWantedPages(printer outputFormatter, pages []wiki.WantedPage) {
+	if len(pages) == 0 {
+		printer.printLine("_ none")
+		return
+	}
+
+	for i, page := range pages {
+		if i > 0 {
+			printer.printBlankLine()
+		}
+		printer.printLine(printer.wantedHeader(page.Name, page.Mentions))
+		printer.printBlankLine()
+
+		sources := page.Sources
+		if len(sources) > wantedSourcePreviewLimit {
+			sources = sources[:wantedSourcePreviewLimit]
+		}
+		for _, source := range sources {
+			printer.printLine(printer.wantedSourceLine(source.Document, source.Context))
+		}
+		if len(page.Sources) > len(sources) {
+			printer.printLine("_ ...")
+		}
+	}
+}
+
 func truncateRunes(value string, limit int) string {
 	if limit <= 0 {
 		return ""
@@ -354,7 +461,15 @@ func truncateRunes(value string, limit int) string {
 
 func formatLintReport(vault *wiki.Vault, report wiki.LintReport) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("// lint_failed orphans=%d islands=%d", len(report.Orphans), len(report.Islands)))
+	fmt.Fprintf(&b,
+		"// lint_failed documents=%d orphans=%d islands=%d largest_component_ratio=%.4f orphan_rate=%.4f content_coverage=%.4f",
+		report.DocumentCount,
+		len(report.Orphans),
+		len(report.Islands),
+		report.LargestComponentRatio(),
+		report.OrphanRate(),
+		report.ContentCoverage(),
+	)
 
 	if len(report.Orphans) > 0 {
 		b.WriteString("\n// orphan")
@@ -366,7 +481,7 @@ func formatLintReport(vault *wiki.Vault, report wiki.LintReport) string {
 
 	if len(report.Islands) > 0 {
 		for i, island := range report.Islands {
-			b.WriteString(fmt.Sprintf("\n// island=%d", i+1))
+			fmt.Fprintf(&b, "\n// island=%d", i+1)
 			for _, name := range island {
 				b.WriteString("\n")
 				b.WriteString(formatDocumentIssue(vault, name))
@@ -394,10 +509,6 @@ func printCommandError(err error) {
 		return
 	}
 	errf("awiki: %s\n", message)
-}
-
-func outf(format string, args ...any) {
-	_, _ = fmt.Fprintf(stdout, format, args...)
 }
 
 func outln(args ...any) {

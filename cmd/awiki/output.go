@@ -87,6 +87,18 @@ func (f outputFormatter) missingLine(name string) string {
 	return formatDocumentLineWithLink(f.wikiLink(name, true), "(missing)")
 }
 
+func (f outputFormatter) wantedHeader(name string, mentions int) string {
+	label := "links"
+	if mentions == 1 {
+		label = "link"
+	}
+	return fmt.Sprintf("%s (%d %s)", f.wikiLink(name, true), mentions, label)
+}
+
+func (f outputFormatter) wantedSourceLine(name, context string) string {
+	return "- " + formatDocumentLineWithLink(f.wikiLink(name, false), context)
+}
+
 func printDocumentLine(printer outputFormatter, doc *wiki.Document) {
 	printer.printLine(printer.documentLine(doc.Name, documentPreview(doc)))
 }
