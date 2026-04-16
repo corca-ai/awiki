@@ -50,6 +50,7 @@ The pre-commit hook runs:
 ## CI
 
 GitHub Actions runs on every push to `main` and on pull requests.
+The CI workflow installs the Go version declared in `go.mod`.
 
 The CI job executes:
 

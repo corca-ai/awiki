@@ -5,6 +5,8 @@
 A Go toolchain is required. The project uses [mise](https://mise.jdx.dev/) to
 manage it (`mise.toml`).
 
+`awiki` requires Go 1.25 or newer.
+
 ```sh
 mise install
 ```

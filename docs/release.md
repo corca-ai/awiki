@@ -7,6 +7,8 @@ GitHub Actions defines two repository workflows:
 - `.github/workflows/ci.yml` for test and lint on pushes to `main` and pull requests
 - `.github/workflows/release.yml` for tagged releases
 
+Both workflows read the Go version from `go.mod`.
+
 ## Tagged Release Flow
 
 Pushing a `v*` tag triggers [GoReleaser](https://goreleaser.com/):
