@@ -35,19 +35,37 @@ func TestHasHelpFlag(t *testing.T) {
 	}
 }
 
-func TestPrintCommandErrorStructured(t *testing.T) {
-	oldStderr := stderr
+func TestLintCmdEmitsReportOnIssues(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "Orphan.md"), "Orphan summary.\n")
+	writeTestFile(t, filepath.Join(dir, "IslandA.md"), "Island A.\n\n[[IslandB]]\n")
+	writeTestFile(t, filepath.Join(dir, "IslandB.md"), "Island B.\n\n[[IslandA]]\n")
+	writeTestFile(t, filepath.Join(dir, "Hub.md"), "Hub.\n\n[[Spoke]]\n")
+	writeTestFile(t, filepath.Join(dir, "Spoke.md"), "Spoke.\n\n[[Hub]]\n")
+
+	oldStdout, oldStderr := stdout, stderr
+	var out bytes.Buffer
 	var errOut bytes.Buffer
+	stdout = &out
 	stderr = &errOut
 	t.Cleanup(func() {
+		stdout = oldStdout
 		stderr = oldStderr
 	})
 
-	printCommandError(errors.New("// lint_failed orphans=1 islands=0\n[[Orphan]]: Orphan summary."))
+	err := lintCmd([]string{"-root", dir})
+	if !errors.Is(err, errLintIssues) {
+		t.Fatalf("lintCmd() error = %v, want errLintIssues", err)
+	}
 
-	want := "// lint_failed orphans=1 islands=0\n[[Orphan]]: Orphan summary.\n"
-	if errOut.String() != want {
-		t.Fatalf("printCommandError() output = %q, want %q", errOut.String(), want)
+	got := out.String()
+	for _, want := range []string{"// lint_failed", "[[Orphan]]", "// island=1", "[[IslandA]]", "[[IslandB]]"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("lintCmd() stdout missing %q in %q", want, got)
+		}
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("lintCmd() unexpected stderr %q", errOut.String())
 	}
 }
 

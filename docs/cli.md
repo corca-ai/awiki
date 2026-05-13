@@ -31,7 +31,7 @@ Checks the undirected document graph.
 
 If either exists, `lint` exits non-zero.
 
-On failure, stderr prints:
+On failure, stdout prints:
 
 - `// lint_failed documents=<n> orphans=<n> islands=<n> largest_component_ratio=<r> orphan_rate=<r> content_coverage=<r>`
 - `// orphan`
@@ -123,16 +123,18 @@ Example output:
 Shows the most-linked missing pages.
 
 - ranks missing pages by unresolved link mentions
-- prints up to 10 items by default
+- prints up to 10 items by default; override with `-n`
 - prints each missing page as `[[Page Name]] (N links)`
 - under each page, prints bullet lines for linking documents and the exact line or front matter line that contains the link
-- if a page has many incoming references, only the first few are shown, followed by `_ ...`
+- caps the per-page referencing lines at 10 by default; override with `-sources` (use `0` for no cap)
+- when truncated, the page is followed by `_ ...`
 
 Example:
 
 ```sh
 awiki wanted
 awiki wanted -n 20
+awiki wanted -sources 0
 ```
 
 Example output:

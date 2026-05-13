@@ -20,9 +20,15 @@ var (
 
 const wantedSourcePreviewLimit = 10
 
+// errLintIssues is a sentinel returned by lintCmd when the report has issues.
+// The report itself is already printed to stdout, so main only needs the
+// non-zero exit status without an additional "awiki: ..." message.
+var errLintIssues = errors.New("lint issues found")
+
 type wantedOptions struct {
-	root  string
-	limit int
+	root    string
+	limit   int
+	sources int
 }
 
 func main() {
@@ -54,7 +60,9 @@ func main() {
 	}
 
 	if err != nil {
-		printCommandError(err)
+		if !errors.Is(err, errLintIssues) {
+			printCommandError(err)
+		}
 		os.Exit(1)
 	}
 }
@@ -107,24 +115,44 @@ func hasHelpFlag(args []string) bool {
 	return false
 }
 
-func lintCmd(args []string) error {
-	fs := flag.NewFlagSet("lint", flag.ContinueOnError)
+// newFlagSet constructs a FlagSet wired to stderr with a standard Usage
+// callback. The supplied lines are printed verbatim, followed by a blank
+// line, "Flags:", and the auto-generated flag defaults.
+func newFlagSet(name string, usage []string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		errln("Usage: awiki lint [flags]")
-		errln("")
-		errln("Fail if the wiki contains orphan documents or disconnected islands.")
-		errln("Also prints largest_component_ratio, orphan_rate, and content_coverage.")
+		for _, line := range usage {
+			errln(line)
+		}
 		errln("")
 		errln("Flags:")
 		fs.PrintDefaults()
 	}
+	return fs
+}
 
+// parseFlags wraps fs.Parse so callers can early-return on -h/--help without
+// surfacing flag.ErrHelp as a runtime error. Returns helped=true when the
+// help message was shown; in that case err is nil and the caller should
+// return immediately.
+func parseFlags(fs *flag.FlagSet, args []string) (helped bool, err error) {
+	err = fs.Parse(args)
+	if errors.Is(err, flag.ErrHelp) {
+		return true, nil
+	}
+	return false, err
+}
+
+func lintCmd(args []string) error {
+	fs := newFlagSet("lint", []string{
+		"Usage: awiki lint [flags]",
+		"",
+		"Fail if the wiki contains orphan documents or disconnected islands.",
+		"Also prints largest_component_ratio, orphan_rate, and content_coverage.",
+	})
 	root := fs.String("root", ".", "Path to wiki root")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
+	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
 
@@ -133,12 +161,13 @@ func lintCmd(args []string) error {
 		return err
 	}
 
+	printer := newOutputFormatter()
 	report := vault.Lint()
 	if report.HasIssues() {
-		return errors.New(formatLintReport(vault, report))
+		printer.printLine(formatLintReport(vault, report))
+		return errLintIssues
 	}
 
-	printer := newOutputFormatter()
 	printer.printComment(fmt.Sprintf(
 		"ok connected_graph documents=%d largest_component_ratio=%.4f orphan_rate=%.4f content_coverage=%.4f",
 		report.DocumentCount,
@@ -150,26 +179,17 @@ func lintCmd(args []string) error {
 }
 
 func pathCmd(args []string) error {
-	fs := flag.NewFlagSet("path", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		errln("Usage: awiki path [flags] <from> <to>")
-		errln("")
-		errln("Print the shortest undirected path between two documents.")
-		errln("Quote document names that contain spaces.")
-		errln("")
-		errln("Example:")
-		errln("  awiki path \"The China study (book)\" \"What to Eat\"")
-		errln("")
-		errln("Flags:")
-		fs.PrintDefaults()
-	}
-
+	fs := newFlagSet("path", []string{
+		"Usage: awiki path [flags] <from> <to>",
+		"",
+		"Print the shortest undirected path between two documents.",
+		"Quote document names that contain spaces.",
+		"",
+		"Example:",
+		"  awiki path \"The China study (book)\" \"What to Eat\"",
+	})
 	root := fs.String("root", ".", "Path to wiki root")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
+	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
 
@@ -203,26 +223,17 @@ func pathCmd(args []string) error {
 }
 
 func avgShortestPathCmd(args []string) error {
-	fs := flag.NewFlagSet("avg-shortest-path", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		errln("Usage: awiki avg-shortest-path [flags]")
-		errln("")
-		errln("Estimate the average shortest path length on the largest connected component")
-		errln("and print sampled longer-than-average paths.")
-		errln("")
-		errln("Flags:")
-		fs.PrintDefaults()
-	}
-
+	fs := newFlagSet("avg-shortest-path", []string{
+		"Usage: awiki avg-shortest-path [flags]",
+		"",
+		"Estimate the average shortest path length on the largest connected component",
+		"and print sampled longer-than-average paths.",
+	})
 	root := fs.String("root", ".", "Path to wiki root")
 	samples := fs.Int("samples", 500, "Number of sampled document pairs")
 	examples := fs.Int("examples", 1, "Number of sampled longer-than-average paths to print")
 	seed := fs.Int64("seed", 1, "Random seed for pair sampling")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
+	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
 	if len(fs.Args()) != 0 {
@@ -261,26 +272,17 @@ func avgShortestPathCmd(args []string) error {
 }
 
 func renameCmd(args []string) error {
-	fs := flag.NewFlagSet("rename", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		errln("Usage: awiki rename [flags] <old> <new>")
-		errln("")
-		errln("Rename a document and rewrite links that point to it.")
-		errln("Quote document names that contain spaces.")
-		errln("")
-		errln("Example:")
-		errln("  awiki rename \"Old Note\" \"New Note\"")
-		errln("")
-		errln("Flags:")
-		fs.PrintDefaults()
-	}
-
+	fs := newFlagSet("rename", []string{
+		"Usage: awiki rename [flags] <old> <new>",
+		"",
+		"Rename a document and rewrite links that point to it.",
+		"Quote document names that contain spaces.",
+		"",
+		"Example:",
+		"  awiki rename \"Old Note\" \"New Note\"",
+	})
 	root := fs.String("root", ".", "Path to wiki root")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
+	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
 
@@ -290,7 +292,12 @@ func renameCmd(args []string) error {
 		return errors.New("rename requires exactly two document arguments")
 	}
 
-	result, err := wiki.Rename(*root, rest[0], rest[1])
+	vault, err := wiki.Load(*root)
+	if err != nil {
+		return err
+	}
+
+	result, err := vault.Rename(rest[0], rest[1])
 	if err != nil {
 		return err
 	}
@@ -307,26 +314,17 @@ func renameCmd(args []string) error {
 }
 
 func linksCmd(args []string) error {
-	fs := flag.NewFlagSet("links", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		errln("Usage: awiki links [flags] <document>")
-		errln("")
-		errln("Show inbound and outbound links for a document.")
-		errln("Quote document names that contain spaces.")
-		errln("")
-		errln("Example:")
-		errln("  awiki links \"Books Ive read\"")
-		errln("")
-		errln("Flags:")
-		fs.PrintDefaults()
-	}
-
+	fs := newFlagSet("links", []string{
+		"Usage: awiki links [flags] <document>",
+		"",
+		"Show inbound and outbound links for a document.",
+		"Quote document names that contain spaces.",
+		"",
+		"Example:",
+		"  awiki links \"Books Ive read\"",
+	})
 	root := fs.String("root", ".", "Path to wiki root")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil
-		}
+	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
 
@@ -370,32 +368,28 @@ func wantedCmd(args []string) error {
 		return err
 	}
 
-	printWantedPages(newOutputFormatter(), limitWantedPages(vault.AllWantedPages(), options.limit))
+	printWantedPages(newOutputFormatter(), limitWantedPages(vault.AllWantedPages(), options.limit), options.sources)
 	return nil
 }
 
 func parseWantedOptions(args []string) (wantedOptions, error) {
-	fs := flag.NewFlagSet("wanted", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() {
-		errln("Usage: awiki wanted [flags]")
-		errln("")
-		errln("Show the most-linked missing pages and the lines that reference them.")
-		errln("")
-		errln("Example:")
-		errln("  awiki wanted -n 10")
-		errln("")
-		errln("Flags:")
-		fs.PrintDefaults()
-	}
-
+	fs := newFlagSet("wanted", []string{
+		"Usage: awiki wanted [flags]",
+		"",
+		"Show the most-linked missing pages and the lines that reference them.",
+		"",
+		"Example:",
+		"  awiki wanted -n 10",
+	})
 	root := fs.String("root", ".", "Path to wiki root")
 	limit := fs.Int("n", 10, "Number of missing pages to print")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return wantedOptions{}, flag.ErrHelp
-		}
+	sources := fs.Int("sources", wantedSourcePreviewLimit, "Maximum referencing lines to show per missing page")
+	helped, err := parseFlags(fs, args)
+	if err != nil {
 		return wantedOptions{}, err
+	}
+	if helped {
+		return wantedOptions{}, flag.ErrHelp
 	}
 	if len(fs.Args()) != 0 {
 		fs.Usage()
@@ -404,10 +398,14 @@ func parseWantedOptions(args []string) (wantedOptions, error) {
 	if *limit < 0 {
 		return wantedOptions{}, errors.New("wanted limit must not be negative")
 	}
+	if *sources < 0 {
+		return wantedOptions{}, errors.New("wanted sources must not be negative")
+	}
 
 	return wantedOptions{
-		root:  *root,
-		limit: *limit,
+		root:    *root,
+		limit:   *limit,
+		sources: *sources,
 	}, nil
 }
 
@@ -421,7 +419,7 @@ func limitWantedPages(pages []wiki.WantedPage, limit int) []wiki.WantedPage {
 	return pages
 }
 
-func printWantedPages(printer outputFormatter, pages []wiki.WantedPage) {
+func printWantedPages(printer outputFormatter, pages []wiki.WantedPage, sourceLimit int) {
 	if len(pages) == 0 {
 		printer.printLine("_ none")
 		return
@@ -435,8 +433,8 @@ func printWantedPages(printer outputFormatter, pages []wiki.WantedPage) {
 		printer.printBlankLine()
 
 		sources := page.Sources
-		if len(sources) > wantedSourcePreviewLimit {
-			sources = sources[:wantedSourcePreviewLimit]
+		if sourceLimit > 0 && len(sources) > sourceLimit {
+			sources = sources[:sourceLimit]
 		}
 		for _, source := range sources {
 			printer.printLine(printer.wantedSourceLine(source.Document, source.Context))
@@ -455,6 +453,9 @@ func truncateRunes(value string, limit int) string {
 	runes := []rune(value)
 	if len(runes) <= limit {
 		return value
+	}
+	if limit <= 3 {
+		return strings.Repeat(".", limit)
 	}
 	return strings.TrimSpace(string(runes[:limit-3])) + "..."
 }
@@ -503,12 +504,7 @@ func formatDocumentIssue(vault *wiki.Vault, name string) string {
 }
 
 func printCommandError(err error) {
-	message := err.Error()
-	if strings.HasPrefix(message, "// ") {
-		errln(message)
-		return
-	}
-	errf("awiki: %s\n", message)
+	errf("awiki: %s\n", err.Error())
 }
 
 func outln(args ...any) {

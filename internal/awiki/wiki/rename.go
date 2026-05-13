@@ -15,13 +15,16 @@ type RenameResult struct {
 	TitleUpdated bool
 }
 
-func Rename(root, oldIdentifier, newIdentifier string) (RenameResult, error) {
-	vault, doc, newName, newPath, err := prepareRename(root, oldIdentifier, newIdentifier)
+// Rename renames a document inside the vault and rewrites links that point
+// to it across every other document. Callers are expected to have just
+// loaded the vault; the on-disk write is atomic per file.
+func (v *Vault) Rename(oldIdentifier, newIdentifier string) (RenameResult, error) {
+	doc, newName, newPath, err := v.prepareRename(oldIdentifier, newIdentifier)
 	if err != nil {
 		return RenameResult{}, err
 	}
 
-	updated, touched, result, err := buildRenameUpdates(vault, doc, newName)
+	updated, touched, result, err := buildRenameUpdates(v, doc, newName)
 	if err != nil {
 		return RenameResult{}, err
 	}
@@ -44,29 +47,24 @@ func Rename(root, oldIdentifier, newIdentifier string) (RenameResult, error) {
 	return result, nil
 }
 
-func prepareRename(root, oldIdentifier, newIdentifier string) (vault *Vault, doc *Document, newName, newPath string, err error) {
-	vault, err = Load(root)
+func (v *Vault) prepareRename(oldIdentifier, newIdentifier string) (doc *Document, newName, newPath string, err error) {
+	doc, err = v.ResolveDocument(oldIdentifier)
 	if err != nil {
-		return nil, nil, "", "", err
-	}
-
-	doc, err = vault.ResolveDocument(oldIdentifier)
-	if err != nil {
-		return nil, nil, "", "", err
+		return nil, "", "", err
 	}
 
 	newName, err = validateRenameTarget(newIdentifier)
 	if err != nil {
-		return nil, nil, "", "", err
+		return nil, "", "", err
 	}
 
 	newKey := documentKey(newName)
-	if existing, ok := vault.docsByKey[newKey]; ok && existing.Key != doc.Key {
-		return nil, nil, "", "", fmt.Errorf("document %q already exists", existing.Name)
+	if existing, ok := v.docsByKey[newKey]; ok && existing.Key != doc.Key {
+		return nil, "", "", fmt.Errorf("document %q already exists", existing.Name)
 	}
 
-	newPath = filepath.Join(vault.Root, newName+filepath.Ext(doc.Path))
-	return vault, doc, newName, newPath, nil
+	newPath = filepath.Join(v.Root, newName+filepath.Ext(doc.Path))
+	return doc, newName, newPath, nil
 }
 
 func buildRenameUpdates(vault *Vault, doc *Document, newName string) (updated map[string]string, touched map[string]struct{}, result RenameResult, err error) {

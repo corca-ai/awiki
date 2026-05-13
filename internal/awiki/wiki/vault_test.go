@@ -566,7 +566,11 @@ title: Old
 `)
 	writeFile(t, filepath.Join(dir, "Ref.md"), "[[Old]]\n[[Old|alias]]\n[text](Old.md#Section)\n![image](Old.md)\n")
 
-	result, err := Rename(dir, "Old", "New")
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	result, err := vault.Rename("Old", "New")
 	if err != nil {
 		t.Fatalf("Rename() error = %v", err)
 	}
@@ -607,7 +611,11 @@ related: '[alias](Old.md)'
 [[Old]]
 `)
 
-	result, err := Rename(dir, "Old", "New")
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	result, err := vault.Rename("Old", "New")
 	if err != nil {
 		t.Fatalf("Rename() error = %v", err)
 	}
@@ -634,7 +642,11 @@ func TestRenamePreservesEscapedWikiLinkAliasSeparator(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "Old.md"), "")
 	writeFile(t, filepath.Join(dir, "Ref.md"), "| [[Old\\|alias]] |\n")
 
-	result, err := Rename(dir, "Old", "New")
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	result, err := vault.Rename("Old", "New")
 	if err != nil {
 		t.Fatalf("Rename() error = %v", err)
 	}
