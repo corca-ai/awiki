@@ -413,6 +413,30 @@ func TestSplitWikiLinkParts(t *testing.T) {
 	}
 }
 
+func TestParseLinksIgnoresInlineCodeSpans(t *testing.T) {
+	content := "Real [[Page]] here.\n" +
+		"Inline example: `[[Foo]]` should be ignored.\n" +
+		"Path example: `[[/papers/attention.pdf]]`\n" +
+		"Double backticks: ``code with ` and [[Baz]]`` end.\n" +
+		"Unbalanced backtick `[[Qux]] still counts.\n"
+
+	links := ParseLinks(content)
+	var keys []string
+	for _, link := range links {
+		keys = append(keys, link.TargetKey)
+	}
+
+	want := map[string]bool{"page": true, "qux": true}
+	if len(keys) != len(want) {
+		t.Fatalf("ParseLinks() keys = %#v, want %v", keys, want)
+	}
+	for _, key := range keys {
+		if !want[key] {
+			t.Fatalf("ParseLinks() extracted unexpected key %q (all: %#v)", key, keys)
+		}
+	}
+}
+
 func TestLoadParsesEscapedWikiLinkAliasInTable(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "Fat in foods.md"), "| [[Almond\\|아몬드]] |\n")

@@ -140,9 +140,69 @@ func nextFenceState(inFence bool, fenceRune rune, fenceWidth int, marker rune, w
 }
 
 func parseLinksInLine(line string) []Link {
-	links := parseWikiLinks(line)
-	links = append(links, parseMarkdownLinks(line)...)
+	masked := maskInlineCode(line)
+	links := parseWikiLinks(masked)
+	links = append(links, parseMarkdownLinks(masked)...)
 	return links
+}
+
+// maskInlineCode replaces the contents of inline code spans with spaces while
+// preserving the line's byte length, so link extraction and rewriting ignore
+// example link syntax shown as inline code (e.g. `[[Foo]]`). The backtick
+// delimiters themselves are kept. A backtick run only opens a span when a
+// matching closing run of equal length appears later on the same line;
+// otherwise the backticks are treated as literal text.
+func maskInlineCode(line string) string {
+	if !strings.ContainsRune(line, '`') {
+		return line
+	}
+
+	b := []byte(line)
+	for i := 0; i < len(b); {
+		if b[i] != '`' {
+			i++
+			continue
+		}
+
+		contentStart := backtickRunEnd(b, i)
+		openLen := contentStart - i
+		closeStart, closeEnd, ok := findClosingRun(b, contentStart, openLen)
+		if !ok {
+			i = contentStart
+			continue
+		}
+
+		for k := contentStart; k < closeStart; k++ {
+			b[k] = ' '
+		}
+		i = closeEnd
+	}
+	return string(b)
+}
+
+// backtickRunEnd returns the index just past the run of backticks starting at i.
+func backtickRunEnd(b []byte, i int) int {
+	for i < len(b) && b[i] == '`' {
+		i++
+	}
+	return i
+}
+
+// findClosingRun locates the next backtick run of exactly width starting at or
+// after pos, returning its bounds. ok is false when no matching run exists.
+func findClosingRun(b []byte, pos, width int) (start, end int, ok bool) {
+	for j := pos; j < len(b); {
+		if b[j] != '`' {
+			j++
+			continue
+		}
+		runStart := j
+		j = backtickRunEnd(b, j)
+		if j-runStart == width {
+			return runStart, j, true
+		}
+	}
+	return 0, 0, false
 }
 
 func normalizeLinkContext(lines []string) string {
@@ -193,7 +253,7 @@ func rewriteLinkLines(lines []textLine, oldKey, newName string, respectFences bo
 }
 
 func rewriteWikiLinks(line, oldKey, newName string) (rewritten string, changes int) {
-	matches := wikiLinkRE.FindAllStringIndex(line, -1)
+	matches := wikiLinkRE.FindAllStringIndex(maskInlineCode(line), -1)
 	if len(matches) == 0 {
 		return line, 0
 	}
@@ -238,7 +298,7 @@ func rewriteWikiLinks(line, oldKey, newName string) (rewritten string, changes i
 }
 
 func rewriteMarkdownLinks(line, oldKey, newName string) (rewritten string, changes int) {
-	matches := markdownLinkRE.FindAllStringSubmatchIndex(line, -1)
+	matches := markdownLinkRE.FindAllStringSubmatchIndex(maskInlineCode(line), -1)
 	if len(matches) == 0 {
 		return line, 0
 	}
