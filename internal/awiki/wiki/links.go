@@ -19,8 +19,13 @@ type Link struct {
 	Kind          LinkKind
 	DisplayTarget string
 	TargetKey     string
-	Resolved      string
-	Context       string
+	// RawTarget is the literal link target with any #fragment removed and
+	// surrounding <> trimmed (e.g. "../goals/g1.md", "folder/note", "Note").
+	// It carries the directory information that TargetKey (a basename key)
+	// discards, so recursive vaults can resolve links by repo-relative path.
+	RawTarget string
+	Resolved  string
+	Context   string
 }
 
 var (
@@ -61,6 +66,197 @@ func RewriteDocumentLinks(content, oldName, newName string) (rewritten string, c
 		return content, 0
 	}
 	return head + body, changes
+}
+
+// rewriteDocumentLinksRecursive rewrites the links in a source document that
+// resolve to target.doc, pointing them at target's new repo-relative path and
+// recomputing relative link text. sourceRelDir is the source document's
+// directory. newBaseUnique reports whether the new basename is unique vault-
+// wide, so bare wikilinks can stay bare instead of becoming path-qualified.
+func (v *Vault) rewriteDocumentLinksRecursive(content, sourceRelDir string, target renameTarget, newBaseUnique bool) (rewritten string, changes int) {
+	fm := ParseFrontMatter(content)
+	if !fm.Present {
+		rewritten, changes = v.rewriteRecursiveLines(scanLines(content), sourceRelDir, target, newBaseUnique, true)
+		if changes == 0 {
+			return content, 0
+		}
+		return rewritten, changes
+	}
+
+	head, headChanges := v.rewriteRecursiveLines(scanLines(content[:fm.BodyOffset]), sourceRelDir, target, newBaseUnique, false)
+	body, bodyChanges := v.rewriteRecursiveLines(scanLines(content[fm.BodyOffset:]), sourceRelDir, target, newBaseUnique, true)
+	changes = headChanges + bodyChanges
+	if changes == 0 {
+		return content, 0
+	}
+	return head + body, changes
+}
+
+func (v *Vault) rewriteRecursiveLines(lines []textLine, sourceRelDir string, target renameTarget, newBaseUnique, respectFences bool) (rewritten string, changes int) {
+	var (
+		b          strings.Builder
+		inFence    bool
+		fenceRune  rune
+		fenceWidth int
+	)
+
+	for _, line := range lines {
+		if respectFences {
+			trimmed := strings.TrimSpace(trimLine(line.text))
+			if marker, width, ok := fenceStart(trimmed); ok {
+				if inFence && marker == fenceRune && width >= fenceWidth {
+					inFence = false
+				} else if !inFence {
+					inFence = true
+					fenceRune = marker
+					fenceWidth = width
+				}
+				b.WriteString(line.text)
+				continue
+			}
+			if inFence {
+				b.WriteString(line.text)
+				continue
+			}
+		}
+
+		updated := line.text
+		var lineChanges int
+		updated, lineChanges = v.rewriteWikiLinksRecursive(updated, sourceRelDir, target, newBaseUnique)
+		changes += lineChanges
+		updated, lineChanges = v.rewriteMarkdownLinksRecursive(updated, sourceRelDir, target)
+		changes += lineChanges
+		b.WriteString(updated)
+	}
+
+	return b.String(), changes
+}
+
+func (v *Vault) rewriteWikiLinksRecursive(line, sourceRelDir string, target renameTarget, newBaseUnique bool) (rewritten string, changes int) {
+	matches := wikiLinkRE.FindAllStringIndex(maskInlineCode(line), -1)
+	if len(matches) == 0 {
+		return line, 0
+	}
+
+	var (
+		b    strings.Builder
+		last int
+	)
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		b.WriteString(line[last:start])
+		full := line[start:end]
+		last = end
+
+		replacement, ok := v.wikiLinkReplacement(full, sourceRelDir, target, newBaseUnique)
+		if !ok || replacement == full {
+			b.WriteString(full)
+			continue
+		}
+		b.WriteString(replacement)
+		changes++
+	}
+	b.WriteString(line[last:])
+
+	return b.String(), changes
+}
+
+// wikiLinkReplacement returns the rewritten form of a wikilink whose target
+// resolves to the renamed document, or ok=false when the link points elsewhere.
+func (v *Vault) wikiLinkReplacement(full, sourceRelDir string, target renameTarget, newBaseUnique bool) (string, bool) {
+	inner := full[2 : len(full)-2]
+	targetPart, label, hasLabel, escapedSeparator := splitWikiLinkParts(inner)
+	base, suffix := splitTargetSuffix(strings.TrimSpace(targetPart))
+	raw := rawLinkTarget(base)
+
+	cand, ok := v.resolveRecursive(sourceRelDir, LinkWiki, raw, documentKey(base))
+	if !ok || cand != target.doc {
+		return "", false
+	}
+
+	newTargetText := target.newRelPath
+	if !strings.ContainsAny(raw, `/\`) && newBaseUnique {
+		newTargetText = target.newBase
+	}
+	if strings.HasSuffix(strings.ToLower(strings.TrimSpace(base)), ".md") {
+		newTargetText += ".md"
+	}
+	newTargetText += suffix
+
+	if !hasLabel {
+		return "[[" + newTargetText + "]]", true
+	}
+	separator := "|"
+	if escapedSeparator {
+		separator = `\|`
+	}
+	return "[[" + newTargetText + separator + label + "]]", true
+}
+
+func (v *Vault) rewriteMarkdownLinksRecursive(line, sourceRelDir string, target renameTarget) (rewritten string, changes int) {
+	matches := markdownLinkRE.FindAllStringSubmatchIndex(maskInlineCode(line), -1)
+	if len(matches) == 0 {
+		return line, 0
+	}
+
+	var (
+		b    strings.Builder
+		last int
+	)
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		destStart, destEnd := match[2], match[3]
+		full := line[start:end]
+
+		b.WriteString(line[last:start])
+		if strings.HasPrefix(full, "!") {
+			b.WriteString(full)
+			last = end
+			continue
+		}
+
+		newDest, changed := v.rewriteMarkdownDestRecursive(line[destStart:destEnd], sourceRelDir, target)
+		if !changed {
+			b.WriteString(full)
+			last = end
+			continue
+		}
+
+		b.WriteString(line[start:destStart])
+		b.WriteString(newDest)
+		b.WriteString(line[destEnd:end])
+		changes++
+		last = end
+	}
+	b.WriteString(line[last:])
+
+	return b.String(), changes
+}
+
+func (v *Vault) rewriteMarkdownDestRecursive(dest, sourceRelDir string, target renameTarget) (string, bool) {
+	pathStart, pathEnd, ok := destinationBounds(dest)
+	if !ok {
+		return dest, false
+	}
+
+	rawPath := dest[pathStart:pathEnd]
+	base, suffix := splitTargetSuffix(rawPath)
+	raw := rawLinkTarget(base)
+
+	cand, ok := v.resolveRecursive(sourceRelDir, LinkMarkdown, raw, documentKey(base))
+	if !ok || cand != target.doc {
+		return dest, false
+	}
+
+	newRel := relPathFromDir(sourceRelDir, target.newRelPath)
+	if strings.EqualFold(path.Ext(strings.TrimSpace(base)), ".md") {
+		newRel += ".md"
+	}
+	newPath := newRel + suffix
+	if newPath == rawPath {
+		return dest, false
+	}
+	return dest[:pathStart] + newPath + dest[pathEnd:], true
 }
 
 func parseFrontMatterLinks(lines []textLine) []Link {
@@ -368,6 +564,7 @@ func parseWikiLinks(line string) []Link {
 			Kind:          LinkWiki,
 			DisplayTarget: displayTarget(base, suffix),
 			TargetKey:     key,
+			RawTarget:     rawLinkTarget(base),
 		})
 	}
 	return links
@@ -418,6 +615,7 @@ func parseMarkdownLinks(line string) []Link {
 			Kind:          LinkMarkdown,
 			DisplayTarget: displayTarget(base, suffix),
 			TargetKey:     key,
+			RawTarget:     rawLinkTarget(base),
 		})
 	}
 	return links
@@ -516,6 +714,104 @@ func documentKey(value string) string {
 		return ""
 	}
 	return strings.ToLower(name)
+}
+
+// rawLinkTarget normalizes a link target into the literal repo-relative-ish
+// path used for recursive resolution: <> trimmed, fragment removed, surrounding
+// whitespace trimmed. The directory portion is preserved (unlike documentKey).
+func rawLinkTarget(base string) string {
+	base = strings.TrimSpace(strings.Trim(strings.TrimSpace(base), "<>"))
+	base, _ = splitTargetSuffix(base)
+	return strings.TrimSpace(base)
+}
+
+// documentPathKey computes the canonical key for a repo-relative path: cleaned,
+// slash-separated, final ".md" stripped, NFC-normalized, lowercased. In a flat
+// vault (a path with no directory component) this equals documentKey, so flat
+// behavior is the single-directory special case of the path rule.
+func documentPathKey(relPath string) string {
+	cleaned := cleanRelPath(relPath)
+	if cleaned == "" {
+		return ""
+	}
+	if ext := path.Ext(cleaned); strings.EqualFold(ext, ".md") {
+		cleaned = strings.TrimSuffix(cleaned, ext)
+	}
+	return strings.ToLower(norm.NFC.String(cleaned))
+}
+
+// cleanRelPath normalizes a slash path: trims, drops a leading "./", and
+// path.Clean-s it. Returns "" for empty or "." results.
+func cleanRelPath(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	p = strings.TrimPrefix(p, "./")
+	p = path.Clean(p)
+	if p == "." || p == "/" {
+		return ""
+	}
+	return p
+}
+
+// resolveTargetRel joins a link's raw target against the source document's
+// directory and cleans the result, yielding a repo-relative path. An empty
+// sourceDir (top-level document) makes this a plain clean of the target.
+func resolveTargetRel(sourceDir, rawTarget string) string {
+	rawTarget = strings.TrimSpace(rawTarget)
+	if sourceDir == "" || sourceDir == "." {
+		return cleanRelPath(rawTarget)
+	}
+	return cleanRelPath(path.Join(sourceDir, rawTarget))
+}
+
+// relPathFromDir returns the path of target as written from sourceDir, using
+// "../" hops as needed. Both arguments are slash paths relative to the vault
+// root. Used to recompute markdown link text after a rename moves a file.
+func relPathFromDir(sourceDir, target string) string {
+	sourceDir = cleanRelPath(sourceDir)
+	target = cleanRelPath(target)
+	if sourceDir == "" {
+		return target
+	}
+
+	srcParts := strings.Split(sourceDir, "/")
+	tgtParts := strings.Split(target, "/")
+	i := 0
+	for i < len(srcParts) && i < len(tgtParts) && strings.EqualFold(srcParts[i], tgtParts[i]) {
+		i++
+	}
+
+	var b strings.Builder
+	for j := i; j < len(srcParts); j++ {
+		b.WriteString("../")
+	}
+	b.WriteString(strings.Join(tgtParts[i:], "/"))
+	rel := b.String()
+	if rel == "" {
+		return "."
+	}
+	return rel
+}
+
+// lastSegment returns the final path component of a slash path.
+func lastSegment(relPath string) string {
+	relPath = cleanRelPath(relPath)
+	if idx := strings.LastIndex(relPath, "/"); idx >= 0 {
+		return relPath[idx+1:]
+	}
+	return relPath
+}
+
+// dirSegment returns the directory portion of a slash path, or "" for a
+// top-level path.
+func dirSegment(relPath string) string {
+	relPath = cleanRelPath(relPath)
+	if idx := strings.LastIndex(relPath, "/"); idx >= 0 {
+		return relPath[:idx]
+	}
+	return ""
 }
 
 func fenceStart(line string) (marker rune, width int, ok bool) {

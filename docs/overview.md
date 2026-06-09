@@ -8,6 +8,9 @@ The target workflow is a folderless note garden:
 - notes may use Obsidian-style front matter
 - structure comes from links, not folders or tags
 
+Nested directory layouts are also supported with `-recursive`, which identifies
+documents by repo-relative path.
+
 ## Quick Start
 
 ```sh

@@ -3,6 +3,11 @@
 `awiki` operates on one wiki root directory at a time. Use `-root <dir>` to
 target a directory explicitly; otherwise the current directory is used.
 
+Every command accepts `-recursive` (`-r`) to walk subdirectories. By default
+only top-level `.md` files are read. In recursive mode documents are identified
+and printed by their repo-relative path (e.g. `[[goals/login]]`), and `rename`
+accepts a path target. See [Link Resolution](link-resolution.md).
+
 ## Output Style
 
 Command output is line-oriented and grep-friendly.

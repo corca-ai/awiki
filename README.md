@@ -2,9 +2,10 @@
 
 `awiki` is a CLI for exploring and maintaining flat-file Markdown wikis.
 
-It assumes a folderless wiki: every note lives in the same directory, uses
+It prefers a folderless wiki: every note lives in the same directory, uses
 Obsidian-style front matter plus Markdown, and is structured through links
-instead of folders or tags.
+instead of folders or tags. Nested layouts are supported too via `-recursive`,
+which identifies documents by repo-relative path.
 
 ## Documentation
 

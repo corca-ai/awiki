@@ -26,9 +26,10 @@ const wantedSourcePreviewLimit = 10
 var errLintIssues = errors.New("lint issues found")
 
 type wantedOptions struct {
-	root    string
-	limit   int
-	sources int
+	root      string
+	recursive bool
+	limit     int
+	sources   int
 }
 
 func main() {
@@ -144,6 +145,20 @@ func parseFlags(fs *flag.FlagSet, args []string) (helped bool, err error) {
 	return false, err
 }
 
+// addCommonFlags registers the flags shared by every command: -root and the
+// opt-in -recursive (-r) flag. Recursion is never automatic.
+func addCommonFlags(fs *flag.FlagSet) (root *string, recursive *bool) {
+	root = fs.String("root", ".", "Path to wiki root")
+	rec := new(bool)
+	fs.BoolVar(rec, "recursive", false, "Recurse into subdirectories, identifying documents by repo-relative path")
+	fs.BoolVar(rec, "r", false, "Shorthand for -recursive")
+	return root, rec
+}
+
+func loadVaultFor(root string, recursive bool) (*wiki.Vault, error) {
+	return wiki.LoadWithOptions(root, wiki.Options{Recursive: recursive})
+}
+
 func lintCmd(args []string) error {
 	fs := newFlagSet("lint", []string{
 		"Usage: awiki lint [flags]",
@@ -151,12 +166,12 @@ func lintCmd(args []string) error {
 		"Fail if the wiki contains orphan documents or disconnected islands.",
 		"Also prints largest_component_ratio, orphan_rate, and content_coverage.",
 	})
-	root := fs.String("root", ".", "Path to wiki root")
+	root, recursive := addCommonFlags(fs)
 	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
 
-	vault, err := wiki.Load(*root)
+	vault, err := loadVaultFor(*root, *recursive)
 	if err != nil {
 		return err
 	}
@@ -188,7 +203,7 @@ func pathCmd(args []string) error {
 		"Example:",
 		"  awiki path \"The China study (book)\" \"What to Eat\"",
 	})
-	root := fs.String("root", ".", "Path to wiki root")
+	root, recursive := addCommonFlags(fs)
 	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
@@ -199,7 +214,7 @@ func pathCmd(args []string) error {
 		return errors.New("path requires exactly two document arguments")
 	}
 
-	vault, err := wiki.Load(*root)
+	vault, err := loadVaultFor(*root, *recursive)
 	if err != nil {
 		return err
 	}
@@ -229,7 +244,7 @@ func avgShortestPathCmd(args []string) error {
 		"Estimate the average shortest path length on the largest connected component",
 		"and print sampled longer-than-average paths.",
 	})
-	root := fs.String("root", ".", "Path to wiki root")
+	root, recursive := addCommonFlags(fs)
 	samples := fs.Int("samples", 500, "Number of sampled document pairs")
 	examples := fs.Int("examples", 1, "Number of sampled longer-than-average paths to print")
 	seed := fs.Int64("seed", 1, "Random seed for pair sampling")
@@ -241,7 +256,7 @@ func avgShortestPathCmd(args []string) error {
 		return errors.New("avg-shortest-path does not accept positional arguments")
 	}
 
-	vault, err := wiki.Load(*root)
+	vault, err := loadVaultFor(*root, *recursive)
 	if err != nil {
 		return err
 	}
@@ -281,7 +296,7 @@ func renameCmd(args []string) error {
 		"Example:",
 		"  awiki rename \"Old Note\" \"New Note\"",
 	})
-	root := fs.String("root", ".", "Path to wiki root")
+	root, recursive := addCommonFlags(fs)
 	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
@@ -292,7 +307,7 @@ func renameCmd(args []string) error {
 		return errors.New("rename requires exactly two document arguments")
 	}
 
-	vault, err := wiki.Load(*root)
+	vault, err := loadVaultFor(*root, *recursive)
 	if err != nil {
 		return err
 	}
@@ -323,7 +338,7 @@ func linksCmd(args []string) error {
 		"Example:",
 		"  awiki links \"Books Ive read\"",
 	})
-	root := fs.String("root", ".", "Path to wiki root")
+	root, recursive := addCommonFlags(fs)
 	if helped, err := parseFlags(fs, args); helped || err != nil {
 		return err
 	}
@@ -334,7 +349,7 @@ func linksCmd(args []string) error {
 		return errors.New("links requires exactly one document argument")
 	}
 
-	vault, err := wiki.Load(*root)
+	vault, err := loadVaultFor(*root, *recursive)
 	if err != nil {
 		return err
 	}
@@ -363,7 +378,7 @@ func wantedCmd(args []string) error {
 		return err
 	}
 
-	vault, err := wiki.Load(options.root)
+	vault, err := loadVaultFor(options.root, options.recursive)
 	if err != nil {
 		return err
 	}
@@ -381,7 +396,7 @@ func parseWantedOptions(args []string) (wantedOptions, error) {
 		"Example:",
 		"  awiki wanted -n 10",
 	})
-	root := fs.String("root", ".", "Path to wiki root")
+	root, recursive := addCommonFlags(fs)
 	limit := fs.Int("n", 10, "Number of missing pages to print")
 	sources := fs.Int("sources", wantedSourcePreviewLimit, "Maximum referencing lines to show per missing page")
 	helped, err := parseFlags(fs, args)
@@ -403,9 +418,10 @@ func parseWantedOptions(args []string) (wantedOptions, error) {
 	}
 
 	return wantedOptions{
-		root:    *root,
-		limit:   *limit,
-		sources: *sources,
+		root:      *root,
+		recursive: *recursive,
+		limit:     *limit,
+		sources:   *sources,
 	}, nil
 }
 

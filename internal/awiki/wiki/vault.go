@@ -9,22 +9,39 @@ import (
 )
 
 type Document struct {
-	Name        string
-	Key         string
-	Path        string
+	Name string
+	Key  string
+	Path string
+	// RelPath is the document's repo-relative slash path without the ".md"
+	// suffix. In a flat vault it equals the basename; in a recursive vault it
+	// carries directories (e.g. "goals/g1"). It is the canonical identity.
+	RelPath     string
 	Excerpt     string
 	FrontMatter FrontMatter
 	Links       []Link
 }
 
+// Options controls how a vault is loaded.
+type Options struct {
+	// Recursive walks subdirectories and identifies documents by repo-relative
+	// path. When false (the default) only top-level *.md files are loaded and
+	// documents are identified by basename, exactly as before.
+	Recursive bool
+}
+
 type Vault struct {
 	Root        string
 	Documents   []*Document
+	recursive   bool
 	docsByKey   map[string]*Document
 	identifiers map[string][]*Document
-	directed    map[string]map[string]struct{}
-	inbound     map[string]map[string]struct{}
-	undirected  map[string]map[string]struct{}
+	// basenames maps a basename key to the documents carrying that basename,
+	// sorted by repo-relative path. It drives Obsidian-style bare wikilink
+	// resolution and excludes titles/aliases on purpose.
+	basenames  map[string][]*Document
+	directed   map[string]map[string]struct{}
+	inbound    map[string]map[string]struct{}
+	undirected map[string]map[string]struct{}
 }
 
 type cacheState struct {
@@ -36,27 +53,33 @@ type cacheState struct {
 }
 
 func Load(root string) (*Vault, error) {
-	vault, _, err := loadVault(root, true)
+	return LoadWithOptions(root, Options{})
+}
+
+// LoadWithOptions loads a vault, honoring Options. With Options{Recursive:true}
+// it walks subdirectories and identifies documents by repo-relative path.
+func LoadWithOptions(root string, opts Options) (*Vault, error) {
+	vault, _, err := loadVault(root, opts, true)
 	return vault, err
 }
 
-func loadVault(root string, useCache bool) (*Vault, loadStats, error) {
+func loadVault(root string, opts Options, useCache bool) (*Vault, loadStats, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, loadStats{}, err
 	}
 
-	entries, err := readSortedDirEntries(absRoot)
+	files, err := discoverFiles(absRoot, opts.Recursive)
 	if err != nil {
 		return nil, loadStats{}, err
 	}
 
-	vault := newVault(absRoot)
-	cache := newCacheState(absRoot, useCache)
+	vault := newVault(absRoot, opts.Recursive)
+	cache := newCacheState(absRoot, opts.Recursive, useCache)
 	var stats loadStats
 
-	for _, entry := range entries {
-		cached, loaded, err := loadVaultEntry(vault, entry, cache)
+	for _, file := range files {
+		cached, loaded, err := loadVaultEntry(vault, file, cache)
 		if err != nil {
 			return nil, loadStats{}, err
 		}
@@ -74,47 +97,136 @@ func loadVault(root string, useCache bool) (*Vault, loadStats, error) {
 	finalizeCacheState(absRoot, cache)
 
 	vault.buildIdentifiers()
+	vault.buildBasenames()
 	vault.buildGraph()
 	return vault, stats, nil
 }
 
-func readSortedDirEntries(root string) ([]os.DirEntry, error) {
+// discoveredFile is a markdown document found during discovery, carrying both
+// its absolute path and its repo-relative slash path (with the ".md" suffix).
+type discoveredFile struct {
+	abs     string
+	relFile string
+	info    os.FileInfo
+}
+
+func discoverFiles(root string, recursive bool) ([]discoveredFile, error) {
+	if recursive {
+		return discoverFilesRecursive(root)
+	}
+	return discoverFilesFlat(root)
+}
+
+func discoverFilesFlat(root string) ([]discoveredFile, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
-	})
-	return entries, nil
+	var files []discoveredFile
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, discoveredFile{
+			abs:     filepath.Join(root, entry.Name()),
+			relFile: entry.Name(),
+			info:    info,
+		})
+	}
+	sortDiscoveredFiles(files)
+	return files, nil
 }
 
-func newVault(root string) *Vault {
+func discoverFilesRecursive(root string) ([]discoveredFile, error) {
+	var files []discoveredFile
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			if p != root && isIgnoredDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(d.Name()), ".md") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		files = append(files, discoveredFile{
+			abs:     p,
+			relFile: filepath.ToSlash(rel),
+			info:    info,
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sortDiscoveredFiles(files)
+	return files, nil
+}
+
+// isIgnoredDir reports whether a directory is excluded from recursive
+// discovery: any dot-directory plus a few conventional build/vendor trees, so
+// awiki and specdown enumerate the same documents.
+func isIgnoredDir(name string) bool {
+	if strings.HasPrefix(name, ".") {
+		return true
+	}
+	switch name {
+	case "node_modules", "vendor":
+		return true
+	}
+	return false
+}
+
+func sortDiscoveredFiles(files []discoveredFile) {
+	sort.Slice(files, func(i, j int) bool {
+		return strings.ToLower(files[i].relFile) < strings.ToLower(files[j].relFile)
+	})
+}
+
+func newVault(root string, recursive bool) *Vault {
 	return &Vault{
 		Root:        root,
+		recursive:   recursive,
 		docsByKey:   make(map[string]*Document),
 		identifiers: make(map[string][]*Document),
+		basenames:   make(map[string][]*Document),
 		directed:    make(map[string]map[string]struct{}),
 		inbound:     make(map[string]map[string]struct{}),
 		undirected:  make(map[string]map[string]struct{}),
 	}
 }
 
-func newCacheState(root string, useCache bool) *cacheState {
+func newCacheState(root string, recursive, useCache bool) *cacheState {
 	state := &cacheState{
 		useCache: useCache,
 		next: vaultCache{
-			Version: vaultCacheVersion,
-			Root:    root,
-			Docs:    make(map[string]cachedDocument),
+			Version:   vaultCacheVersion,
+			Root:      root,
+			Recursive: recursive,
+			Docs:      make(map[string]cachedDocument),
 		},
 	}
 	if !useCache {
 		return state
 	}
 
-	state.cache, state.ok = readVaultCache(root)
+	state.cache, state.ok = readVaultCache(root, recursive)
 	if !state.ok {
 		state.dirty = true
 	}
@@ -133,41 +245,41 @@ func finalizeCacheState(root string, state *cacheState) {
 	}
 }
 
-func loadVaultEntry(vault *Vault, entry os.DirEntry, state *cacheState) (cached, loaded bool, err error) {
-	if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
-		return false, false, nil
+func loadVaultEntry(vault *Vault, file discoveredFile, state *cacheState) (cached, loaded bool, err error) {
+	relPath := strings.TrimSuffix(file.relFile, filepath.Ext(file.relFile))
+	name := relPath
+	if !vault.recursive {
+		name = lastSegment(relPath)
 	}
-
-	info, err := entry.Info()
+	key, err := validateDocumentKey(vault, file.relFile, relPath)
 	if err != nil {
 		return false, false, err
 	}
 
-	filename := entry.Name()
-	path := filepath.Join(vault.Root, filename)
-	name := strings.TrimSuffix(filename, filepath.Ext(filename))
-	key, err := validateDocumentKey(vault, filename, name)
-	if err != nil {
-		return false, false, err
-	}
-
-	doc, cached, err := loadDocument(path, filename, name, key, info, state.cache)
+	doc, cached, err := loadDocument(file.abs, file.relFile, name, key, relPath, file.info, state.cache)
 	if err != nil {
 		return false, false, err
 	}
 
 	addDocumentToVault(vault, doc)
-	state.next.Docs[filename] = cachedDocumentFor(doc, filename, info)
+	state.next.Docs[file.relFile] = cachedDocumentFor(doc, file.relFile, file.info)
 	return cached, true, nil
 }
 
-func validateDocumentKey(vault *Vault, filename, name string) (string, error) {
-	key := documentKey(name)
+func (v *Vault) documentKeyFor(relPath string) string {
+	if v.recursive {
+		return documentPathKey(relPath)
+	}
+	return documentKey(relPath)
+}
+
+func validateDocumentKey(vault *Vault, relFile, relPath string) (string, error) {
+	key := vault.documentKeyFor(relPath)
 	if key == "" {
-		return "", fmt.Errorf("invalid document name %q", filename)
+		return "", fmt.Errorf("invalid document name %q", relFile)
 	}
 	if existing, ok := vault.docsByKey[key]; ok {
-		return "", fmt.Errorf("duplicate document names %q and %q", existing.Name, name)
+		return "", fmt.Errorf("duplicate document names %q and %q", existing.RelPath, relPath)
 	}
 	return key, nil
 }
@@ -177,11 +289,12 @@ func addDocumentToVault(vault *Vault, doc *Document) {
 	vault.docsByKey[doc.Key] = doc
 }
 
-func cachedDocumentFor(doc *Document, filename string, info os.FileInfo) cachedDocument {
+func cachedDocumentFor(doc *Document, relFile string, info os.FileInfo) cachedDocument {
 	return cachedDocument{
-		Filename:    filename,
+		RelFile:     relFile,
 		Name:        doc.Name,
 		Key:         doc.Key,
+		RelPath:     doc.RelPath,
 		MTimeNS:     info.ModTime().UnixNano(),
 		Size:        info.Size(),
 		Excerpt:     doc.Excerpt,
@@ -190,16 +303,18 @@ func cachedDocumentFor(doc *Document, filename string, info os.FileInfo) cachedD
 	}
 }
 
-func loadDocument(path, filename, name, key string, info os.FileInfo, cache vaultCache) (*Document, bool, error) {
-	if cached, ok := cache.Docs[filename]; ok &&
+func loadDocument(path, relFile, name, key, relPath string, info os.FileInfo, cache vaultCache) (*Document, bool, error) {
+	if cached, ok := cache.Docs[relFile]; ok &&
 		cached.Name == name &&
 		cached.Key == key &&
+		cached.RelPath == relPath &&
 		cached.MTimeNS == info.ModTime().UnixNano() &&
 		cached.Size == info.Size() {
 		return &Document{
 			Name:        cached.Name,
 			Key:         cached.Key,
 			Path:        path,
+			RelPath:     cached.RelPath,
 			Excerpt:     cached.Excerpt,
 			FrontMatter: cached.FrontMatter,
 			Links:       cloneLinks(cached.Links),
@@ -215,6 +330,7 @@ func loadDocument(path, filename, name, key string, info os.FileInfo, cache vaul
 		Name:        name,
 		Key:         key,
 		Path:        path,
+		RelPath:     relPath,
 		Excerpt:     FirstPreviewLine(content),
 		FrontMatter: ParseFrontMatter(content),
 		Links:       ParseLinks(content),
@@ -222,12 +338,21 @@ func loadDocument(path, filename, name, key string, info os.FileInfo, cache vaul
 }
 
 func (v *Vault) ResolveDocument(identifier string) (*Document, error) {
+	// Exact identity first: in a recursive vault a repo-relative path
+	// addresses a specific document even when its basename is shared.
+	if doc, ok := v.docsByKey[v.documentKeyFor(identifier)]; ok {
+		return doc, nil
+	}
+
+	// Fall back to the basename / title / alias index.
 	key := documentKey(identifier)
 	if key == "" {
 		return nil, fmt.Errorf("document %q not found", identifier)
 	}
-	if doc, ok := v.docsByKey[key]; ok {
-		return doc, nil
+	if !v.recursive {
+		if doc, ok := v.docsByKey[key]; ok {
+			return doc, nil
+		}
 	}
 
 	docs := uniqueDocuments(v.identifiers[key])
@@ -243,6 +368,31 @@ func (v *Vault) ResolveDocument(identifier string) (*Document, error) {
 		}
 		sort.Strings(names)
 		return nil, fmt.Errorf("document identifier %q is ambiguous: %s", identifier, strings.Join(names, ", "))
+	}
+}
+
+// buildBasenames indexes documents by basename key, sorted by repo-relative
+// path, for Obsidian-style bare wikilink resolution.
+func (v *Vault) buildBasenames() {
+	for _, doc := range v.Documents {
+		key := documentKey(lastSegment(doc.RelPath))
+		if key == "" {
+			continue
+		}
+		v.basenames[key] = append(v.basenames[key], doc)
+	}
+	for key := range v.basenames {
+		docs := v.basenames[key]
+		sort.Slice(docs, func(i, j int) bool {
+			// Obsidian's bare-link preference: the shortest path (closest to
+			// the root) wins; ties broken deterministically by path.
+			di := strings.Count(docs[i].RelPath, "/")
+			dj := strings.Count(docs[j].RelPath, "/")
+			if di != dj {
+				return di < dj
+			}
+			return strings.ToLower(docs[i].RelPath) < strings.ToLower(docs[j].RelPath)
+		})
 	}
 }
 

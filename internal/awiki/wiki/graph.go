@@ -20,7 +20,7 @@ func (v *Vault) buildGraph() {
 
 	for _, doc := range v.Documents {
 		for i := range doc.Links {
-			target, ok := v.docsByKey[doc.Links[i].TargetKey]
+			target, ok := v.resolveLinkTarget(doc, doc.Links[i])
 			if !ok {
 				continue
 			}
@@ -43,6 +43,53 @@ func (v *Vault) buildGraph() {
 			v.undirected[target.Key][doc.Key] = struct{}{}
 		}
 	}
+}
+
+// resolveLinkTarget resolves a single link to a document. Flat vaults resolve
+// by basename key (the original behavior). Recursive vaults resolve markdown
+// links and path-qualified wikilinks by repo-relative path, and bare wikilinks
+// by unique basename — matching Obsidian's getFirstLinkpathDest precedence.
+func (v *Vault) resolveLinkTarget(doc *Document, link Link) (*Document, bool) {
+	if !v.recursive {
+		target, ok := v.docsByKey[link.TargetKey]
+		return target, ok
+	}
+	return v.resolveRecursive(dirSegment(doc.RelPath), link.Kind, link.RawTarget, link.TargetKey)
+}
+
+func (v *Vault) resolveRecursive(sourceDir string, kind LinkKind, rawTarget, baseKey string) (*Document, bool) {
+	if kind == LinkMarkdown {
+		// Markdown link destinations are always source-relative.
+		if doc, ok := v.docsByKey[documentPathKey(resolveTargetRel(sourceDir, rawTarget))]; ok {
+			return doc, true
+		}
+		return nil, false
+	}
+
+	// Wikilink.
+	if strings.HasPrefix(rawTarget, "./") || strings.HasPrefix(rawTarget, "../") {
+		if doc, ok := v.docsByKey[documentPathKey(resolveTargetRel(sourceDir, rawTarget))]; ok {
+			return doc, true
+		}
+		return nil, false
+	}
+	if strings.ContainsAny(rawTarget, "/\\") {
+		// Path-qualified: vault-absolute first (highest precedence), then relative.
+		if doc, ok := v.docsByKey[documentPathKey(cleanRelPath(rawTarget))]; ok {
+			return doc, true
+		}
+		if doc, ok := v.docsByKey[documentPathKey(resolveTargetRel(sourceDir, rawTarget))]; ok {
+			return doc, true
+		}
+		return nil, false
+	}
+
+	// Bare basename: resolve source-independently; on a collision the
+	// root/shortest path wins (the deterministic basenames ordering).
+	if docs := v.basenames[baseKey]; len(docs) > 0 {
+		return docs[0], true
+	}
+	return nil, false
 }
 
 func (v *Vault) InboundNames(identifier string) []string {
@@ -68,7 +115,7 @@ func (v *Vault) OutboundSummaries(identifier string) []LinkSummary {
 	seen := make(map[string]LinkSummary)
 	for _, link := range doc.Links {
 		if link.Resolved != "" {
-			seen["doc:"+documentKey(link.Resolved)] = LinkSummary{Name: link.Resolved}
+			seen["doc:"+strings.ToLower(link.Resolved)] = LinkSummary{Name: link.Resolved}
 			continue
 		}
 		seen["missing:"+strings.ToLower(link.DisplayTarget)] = LinkSummary{
@@ -91,8 +138,8 @@ func (v *Vault) OutboundSummaries(identifier string) []LinkSummary {
 }
 
 func (v *Vault) EdgeDirection(from, to string) string {
-	fromKey := documentKey(from)
-	toKey := documentKey(to)
+	fromKey := v.documentKeyFor(from)
+	toKey := v.documentKeyFor(to)
 	_, forward := v.directed[fromKey][toKey]
 	_, backward := v.directed[toKey][fromKey]
 
@@ -109,8 +156,8 @@ func (v *Vault) EdgeDirection(from, to string) string {
 }
 
 func (v *Vault) ShortestPath(from, to string) ([]string, error) {
-	fromKey := documentKey(from)
-	toKey := documentKey(to)
+	fromKey := v.documentKeyFor(from)
+	toKey := v.documentKeyFor(to)
 	if fromKey == "" || toKey == "" {
 		return nil, fmt.Errorf("path endpoints must not be empty")
 	}

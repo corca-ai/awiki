@@ -2,12 +2,21 @@
 
 ## Scope
 
-`awiki` reads Markdown files directly under one wiki root directory.
-Subdirectories are ignored on purpose.
+By default `awiki` reads Markdown files directly under one wiki root directory
+and ignores subdirectories — the recommended folderless layout.
+
+Passing `-recursive` (`-r`) walks subdirectories too. Hidden directories
+(`.git`, `.obsidian`, …) and `node_modules`/`vendor` are skipped. A flat
+single-directory vault behaves identically under either mode, so recursion is a
+strict superset you opt into.
 
 ## Document Identity
 
-- the canonical document name is the filename without the `.md` suffix
+- the canonical document name is the filename without the `.md` suffix in a flat
+  vault, and the repo-relative path without the `.md` suffix (e.g. `goals/login`)
+  in a recursive vault
+- in a recursive vault, two files with the same basename in different folders are
+  distinct documents, addressable by path
 - names are matched case-insensitively
 - Unicode-equivalent names are matched after normalization, so composed and decomposed forms resolve to the same document
 - front matter `title` may be used for direct document lookup
@@ -32,8 +41,12 @@ Supported keys:
 Resolved links contribute to graph connectivity only when they point to an
 existing document.
 
-Link resolution only matches canonical filenames. Front matter `title` and
-`aliases` do not affect link resolution or graph analysis.
+Link resolution matches canonical document identity, not front matter `title`
+or `aliases`. In a flat vault that identity is the basename; in a recursive
+vault links resolve by repo-relative path, following the Obsidian-aligned rules
+in [Link Resolution](link-resolution.md) (bare `[[Note]]` resolves to a unique
+basename and prefers the shortest path; `[[folder/Note]]` is vault-absolute;
+markdown and `[[../Note]]` links are source-relative).
 
 Supported link forms:
 
@@ -47,6 +60,16 @@ Supported link forms:
 - `[label](<Note.md>)`
 
 The same forms are recognized in front matter values and in the Markdown body.
+
+### specdown trace links
+
+A specdown trace link is an ordinary Markdown link whose text carries an
+`<edge>::` prefix, e.g. `[covers::Login](login.md)`. `awiki` ignores the prefix
+and resolves the destination only, so trace links count as plain undirected
+edges and keep the graph connected. The prefix never appears in resolved page
+names; it shows up only where `awiki` echoes a raw source line verbatim (the
+`wanted` source context and first-line previews), the same as any other raw
+Markdown token.
 
 ## Links That Do Not Count
 
@@ -77,7 +100,12 @@ gardening workflow and for ranking missing pages with `wanted`.
 - the document filename
 - wikilinks pointing to the document in front matter or body text
 - local Markdown links pointing to the document in front matter or body text
-- front matter `title` when it exactly matches the old document name
+- front matter `title` when it exactly matches the old document basename
+
+In a recursive vault, `rename` also accepts a repo-relative path target, keeps
+the document in its directory (or moves it across directories, creating parents
+as needed), recomputes relative link text (`../`) from each referencing
+document, and rewrites only links that resolve to the renamed document.
 
 `rename` does not rewrite:
 
@@ -87,5 +115,6 @@ gardening workflow and for ranking missing pages with `wanted`.
 
 ## Related Docs
 
+- [Link Resolution](link-resolution.md) — Obsidian-aligned resolution rules for both link forms
 - [CLI Guide](cli.md) — command reference
 - [Architecture](architecture.md) — where parsing and graph rules live in code

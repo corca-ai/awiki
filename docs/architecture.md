@@ -34,10 +34,11 @@ This package owns the wiki model and behavior.
 
 ## Design Choices
 
-- flat-file only: only top-level `.md` files are considered documents
+- flat-file by default: only top-level `.md` files are documents, identified by basename
+- opt-in `-recursive` walks subdirectories and identifies documents by repo-relative path; flat is the single-directory special case of the same rules
 - identifier resolution is case-insensitive
 - identifier resolution normalizes Unicode so macOS and Linux filenames resolve consistently
-- graph connectivity resolves links by canonical filename only; front matter `title` and `aliases` do not participate
+- graph connectivity resolves links by canonical document identity (basename when flat, repo-relative path when recursive, Obsidian-aligned); front matter `title` and `aliases` do not participate
 - parsed vault state is cached under the user cache directory and invalidated by file `mtime` and size changes
 - broken links are allowed and preserved
 - graph connectivity ignores unresolved links and self-links

@@ -203,7 +203,7 @@ func TestLoadUsesPersistentCacheForUnchangedDocs(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "Alpha.md"), "Alpha summary.\n\n[[Beta]]\n")
 	writeFile(t, filepath.Join(dir, "Beta.md"), "Beta summary.\n")
 
-	_, stats, err := loadVault(dir, true)
+	_, stats, err := loadVault(dir, Options{}, true)
 	if err != nil {
 		t.Fatalf("first loadVault() error = %v", err)
 	}
@@ -211,7 +211,7 @@ func TestLoadUsesPersistentCacheForUnchangedDocs(t *testing.T) {
 		t.Fatalf("first load stats = %#v, want Parsed=2 Cached=0", stats)
 	}
 
-	cachePath, err := cacheFilePath(filepath.Clean(dir))
+	cachePath, err := cacheFilePath(filepath.Clean(dir), false)
 	if err != nil {
 		t.Fatalf("cacheFilePath() error = %v", err)
 	}
@@ -219,7 +219,7 @@ func TestLoadUsesPersistentCacheForUnchangedDocs(t *testing.T) {
 		t.Fatalf("cache file stat error = %v", err)
 	}
 
-	vault, stats, err := loadVault(dir, true)
+	vault, stats, err := loadVault(dir, Options{}, true)
 	if err != nil {
 		t.Fatalf("second loadVault() error = %v", err)
 	}
@@ -248,7 +248,7 @@ func TestLoadReparsesOnlyChangedDocuments(t *testing.T) {
 	writeFile(t, alphaPath, "Old summary.\n\n[[Beta]]\n")
 	writeFile(t, filepath.Join(dir, "Beta.md"), "Beta summary.\n")
 
-	if _, _, err := loadVault(dir, true); err != nil {
+	if _, _, err := loadVault(dir, Options{}, true); err != nil {
 		t.Fatalf("initial loadVault() error = %v", err)
 	}
 
@@ -266,7 +266,7 @@ func TestLoadReparsesOnlyChangedDocuments(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(dir, "Gamma.md"), "")
 
-	vault, stats, err := loadVault(dir, true)
+	vault, stats, err := loadVault(dir, Options{}, true)
 	if err != nil {
 		t.Fatalf("changed loadVault() error = %v", err)
 	}
@@ -433,6 +433,32 @@ func TestParseLinksIgnoresInlineCodeSpans(t *testing.T) {
 	for _, key := range keys {
 		if !want[key] {
 			t.Fatalf("ParseLinks() extracted unexpected key %q (all: %#v)", key, keys)
+		}
+	}
+}
+
+// TestParseLinksTreatsSpecdownTracePrefixAsPlainEdge pins the interop contract
+// with specdown: a trace link [edge::Display](target.md) is counted as an
+// ordinary edge to its destination, and the edge-name prefix never leaks into
+// any extracted field. awiki resolves the destination only and ignores the
+// prefix. (awiki #9)
+func TestParseLinksTreatsSpecdownTracePrefixAsPlainEdge(t *testing.T) {
+	trace := ParseLinks("This feature [covers::Login Story](login.md) ships.\n")
+	plain := ParseLinks("This feature [Login Story](login.md) ships.\n")
+
+	if len(trace) != 1 || len(plain) != 1 {
+		t.Fatalf("link counts = trace %d, plain %d, want 1 each", len(trace), len(plain))
+	}
+	if trace[0].TargetKey != "login" || trace[0].DisplayTarget != "login" {
+		t.Fatalf("trace link = TargetKey %q DisplayTarget %q, want both %q",
+			trace[0].TargetKey, trace[0].DisplayTarget, "login")
+	}
+	if trace[0].TargetKey != plain[0].TargetKey || trace[0].DisplayTarget != plain[0].DisplayTarget {
+		t.Fatalf("trace link should match the plain edge: trace %#v vs plain %#v", trace[0], plain[0])
+	}
+	for _, field := range []string{trace[0].TargetKey, trace[0].DisplayTarget, trace[0].RawTarget} {
+		if strings.Contains(field, "covers::") {
+			t.Fatalf("edge-name prefix leaked into extracted field %q", field)
 		}
 	}
 }

@@ -7,7 +7,8 @@
 - [Documentation guide](docs/metadoc.md) — rules for writing and maintaining docs
 - [Overview](docs/overview.md) — what awiki is, install paths, and quick start
 - [CLI Reference](docs/cli.md) — command semantics and examples
-- [Wiki Model](docs/wiki-model.md) — flat-file assumptions, identity resolution, and link parsing
+- [Wiki Model](docs/wiki-model.md) — flat-by-default and recursive layouts, identity resolution, and link parsing
+- [Link Resolution](docs/link-resolution.md) — Obsidian-aligned link resolution rules
 - [Build & Run](docs/build.md) — local toolchain and build commands
 - [Testing](docs/testing.md) — test, lint, and hook workflow
 - [Release](docs/release.md) — CI, goreleaser, and Homebrew publishing

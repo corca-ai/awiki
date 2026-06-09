@@ -15,7 +15,7 @@ func BenchmarkLoadWithoutCache(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if _, _, err := loadVault(root, false); err != nil {
+		if _, _, err := loadVault(root, Options{}, false); err != nil {
 			b.Fatalf("loadVault() error = %v", err)
 		}
 	}
@@ -25,7 +25,7 @@ func BenchmarkLoadWarmCache(b *testing.B) {
 	useTempCacheDir(b)
 
 	root := benchmarkWiki(b, 10000)
-	if _, _, err := loadVault(root, true); err != nil {
+	if _, _, err := loadVault(root, Options{}, true); err != nil {
 		b.Fatalf("initial loadVault() error = %v", err)
 	}
 
@@ -33,7 +33,7 @@ func BenchmarkLoadWarmCache(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		if _, _, err := loadVault(root, true); err != nil {
+		if _, _, err := loadVault(root, Options{}, true); err != nil {
 			b.Fatalf("loadVault() error = %v", err)
 		}
 	}
