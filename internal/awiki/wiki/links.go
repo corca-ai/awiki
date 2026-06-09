@@ -44,28 +44,18 @@ func ParseLinks(content string) []Link {
 	return links
 }
 
+// RewriteDocumentLinks rewrites flat-vault links: any wikilink or markdown link
+// whose basename resolves to oldName is repointed at newName.
 func RewriteDocumentLinks(content, oldName, newName string) (rewritten string, changes int) {
 	oldKey := documentKey(oldName)
 	if oldKey == "" {
 		return content, 0
 	}
-
-	fm := ParseFrontMatter(content)
-	if !fm.Present {
-		rewritten, changes := rewriteLinkLines(scanLines(content), oldKey, newName, true)
-		if changes == 0 {
-			return content, 0
-		}
-		return rewritten, changes
+	wikiDecide := flatWikiDecide(oldKey, newName)
+	mdDecide := func(dest string) (string, bool) {
+		return rewriteMarkdownDestination(dest, oldKey, newName)
 	}
-
-	head, headChanges := rewriteLinkLines(scanLines(content[:fm.BodyOffset]), oldKey, newName, false)
-	body, bodyChanges := rewriteLinkLines(scanLines(content[fm.BodyOffset:]), oldKey, newName, true)
-	changes = headChanges + bodyChanges
-	if changes == 0 {
-		return content, 0
-	}
-	return head + body, changes
+	return rewriteFrontMatterAndBody(content, wikiDecide, mdDecide)
 }
 
 // rewriteDocumentLinksRecursive rewrites the links in a source document that
@@ -74,25 +64,48 @@ func RewriteDocumentLinks(content, oldName, newName string) (rewritten string, c
 // directory. newBaseUnique reports whether the new basename is unique vault-
 // wide, so bare wikilinks can stay bare instead of becoming path-qualified.
 func (v *Vault) rewriteDocumentLinksRecursive(content, sourceRelDir string, target renameTarget, newBaseUnique bool) (rewritten string, changes int) {
-	fm := ParseFrontMatter(content)
-	if !fm.Present {
-		rewritten, changes = v.rewriteRecursiveLines(scanLines(content), sourceRelDir, target, newBaseUnique, true)
-		if changes == 0 {
-			return content, 0
-		}
-		return rewritten, changes
+	wikiDecide := func(full string) (string, bool) {
+		return v.wikiLinkReplacement(full, sourceRelDir, target, newBaseUnique)
 	}
-
-	head, headChanges := v.rewriteRecursiveLines(scanLines(content[:fm.BodyOffset]), sourceRelDir, target, newBaseUnique, false)
-	body, bodyChanges := v.rewriteRecursiveLines(scanLines(content[fm.BodyOffset:]), sourceRelDir, target, newBaseUnique, true)
-	changes = headChanges + bodyChanges
-	if changes == 0 {
-		return content, 0
+	mdDecide := func(dest string) (string, bool) {
+		return v.rewriteMarkdownDestRecursive(dest, sourceRelDir, target)
 	}
-	return head + body, changes
+	return rewriteFrontMatterAndBody(content, wikiDecide, mdDecide)
 }
 
-func (v *Vault) rewriteRecursiveLines(lines []textLine, sourceRelDir string, target renameTarget, newBaseUnique, respectFences bool) (rewritten string, changes int) {
+// A wikiDecider decides how to rewrite a whole wikilink (e.g. "[[Note|x]]"),
+// returning the replacement and ok=false to leave it unchanged. A markdownDecider
+// does the same for a markdown link destination.
+type (
+	wikiDecider     func(full string) (string, bool)
+	markdownDecider func(dest string) (string, bool)
+)
+
+// rewriteFrontMatterAndBody applies the wiki and markdown rewriters to a
+// document, parsing inside front matter (where fences do not apply) and the body
+// (where they do). It is the shared driver for both flat and recursive rename
+// rewriting; only the deciders differ.
+func rewriteFrontMatterAndBody(content string, wiki wikiDecider, md markdownDecider) (rewritten string, changes int) {
+	fm := ParseFrontMatter(content)
+	if !fm.Present {
+		rw, c := rewriteLinkLines(scanLines(content), true, wiki, md)
+		if c == 0 {
+			return content, 0
+		}
+		return rw, c
+	}
+
+	head, hc := rewriteLinkLines(scanLines(content[:fm.BodyOffset]), false, wiki, md)
+	body, bc := rewriteLinkLines(scanLines(content[fm.BodyOffset:]), true, wiki, md)
+	if hc+bc == 0 {
+		return content, 0
+	}
+	return head + body, hc + bc
+}
+
+// rewriteLinkLines walks lines, skipping fenced code blocks when respectFences,
+// and applies the wiki then markdown rewriter to each remaining line.
+func rewriteLinkLines(lines []textLine, respectFences bool, wiki wikiDecider, md markdownDecider) (rewritten string, changes int) {
 	var (
 		b          strings.Builder
 		inFence    bool
@@ -121,18 +134,20 @@ func (v *Vault) rewriteRecursiveLines(lines []textLine, sourceRelDir string, tar
 		}
 
 		updated := line.text
-		var lineChanges int
-		updated, lineChanges = v.rewriteWikiLinksRecursive(updated, sourceRelDir, target, newBaseUnique)
-		changes += lineChanges
-		updated, lineChanges = v.rewriteMarkdownLinksRecursive(updated, sourceRelDir, target)
-		changes += lineChanges
+		var c int
+		updated, c = rewriteWikiLinksWith(updated, wiki)
+		changes += c
+		updated, c = rewriteMarkdownLinksWith(updated, md)
+		changes += c
 		b.WriteString(updated)
 	}
 
 	return b.String(), changes
 }
 
-func (v *Vault) rewriteWikiLinksRecursive(line, sourceRelDir string, target renameTarget, newBaseUnique bool) (rewritten string, changes int) {
+// rewriteWikiLinksWith rewrites each wikilink on a line for which decide returns
+// ok, leaving inline-code spans untouched.
+func rewriteWikiLinksWith(line string, decide wikiDecider) (rewritten string, changes int) {
 	matches := wikiLinkRE.FindAllStringIndex(maskInlineCode(line), -1)
 	if len(matches) == 0 {
 		return line, 0
@@ -145,11 +160,11 @@ func (v *Vault) rewriteWikiLinksRecursive(line, sourceRelDir string, target rena
 	for _, match := range matches {
 		start, end := match[0], match[1]
 		b.WriteString(line[last:start])
-		full := line[start:end]
 		last = end
 
-		replacement, ok := v.wikiLinkReplacement(full, sourceRelDir, target, newBaseUnique)
-		if !ok || replacement == full {
+		full := line[start:end]
+		replacement, ok := decide(full)
+		if !ok {
 			b.WriteString(full)
 			continue
 		}
@@ -159,6 +174,76 @@ func (v *Vault) rewriteWikiLinksRecursive(line, sourceRelDir string, target rena
 	b.WriteString(line[last:])
 
 	return b.String(), changes
+}
+
+// rewriteMarkdownLinksWith rewrites each non-image markdown link destination on
+// a line for which decide returns changed, leaving inline-code spans untouched.
+func rewriteMarkdownLinksWith(line string, decide markdownDecider) (rewritten string, changes int) {
+	matches := markdownLinkRE.FindAllStringSubmatchIndex(maskInlineCode(line), -1)
+	if len(matches) == 0 {
+		return line, 0
+	}
+
+	var (
+		b    strings.Builder
+		last int
+	)
+	for _, match := range matches {
+		start, end := match[0], match[1]
+		destStart, destEnd := match[2], match[3]
+		full := line[start:end]
+
+		b.WriteString(line[last:start])
+		last = end
+		if strings.HasPrefix(full, "!") {
+			b.WriteString(full)
+			continue
+		}
+
+		newDest, changed := decide(line[destStart:destEnd])
+		if !changed {
+			b.WriteString(full)
+			continue
+		}
+		b.WriteString(line[start:destStart])
+		b.WriteString(newDest)
+		b.WriteString(line[destEnd:end])
+		changes++
+	}
+	b.WriteString(line[last:])
+
+	return b.String(), changes
+}
+
+// wrapWikiLink renders a wikilink target back into "[[target]]" or
+// "[[target|label]]" form, preserving an escaped alias separator.
+func wrapWikiLink(targetText, label string, hasLabel, escapedSeparator bool) string {
+	if !hasLabel {
+		return "[[" + targetText + "]]"
+	}
+	separator := "|"
+	if escapedSeparator {
+		separator = `\|`
+	}
+	return "[[" + targetText + separator + label + "]]"
+}
+
+// flatWikiDecide builds the flat-vault wikilink decider: rewrite when the link's
+// basename matches oldKey, repointing it at newName.
+func flatWikiDecide(oldKey, newName string) wikiDecider {
+	return func(full string) (string, bool) {
+		inner := full[2 : len(full)-2]
+		targetPart, label, hasLabel, escapedSeparator := splitWikiLinkParts(inner)
+		base, suffix := splitTargetSuffix(strings.TrimSpace(targetPart))
+		if documentKey(base) != oldKey {
+			return "", false
+		}
+		newTarget := newName + suffix
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(base)), ".md") {
+			newTarget = newName + ".md" + suffix
+		}
+		return wrapWikiLink(newTarget, label, hasLabel, escapedSeparator), true
+	}
 }
 
 // wikiLinkReplacement returns the rewritten form of a wikilink whose target
@@ -183,54 +268,11 @@ func (v *Vault) wikiLinkReplacement(full, sourceRelDir string, target renameTarg
 	}
 	newTargetText += suffix
 
-	if !hasLabel {
-		return "[[" + newTargetText + "]]", true
+	replacement := wrapWikiLink(newTargetText, label, hasLabel, escapedSeparator)
+	if replacement == full {
+		return "", false
 	}
-	separator := "|"
-	if escapedSeparator {
-		separator = `\|`
-	}
-	return "[[" + newTargetText + separator + label + "]]", true
-}
-
-func (v *Vault) rewriteMarkdownLinksRecursive(line, sourceRelDir string, target renameTarget) (rewritten string, changes int) {
-	matches := markdownLinkRE.FindAllStringSubmatchIndex(maskInlineCode(line), -1)
-	if len(matches) == 0 {
-		return line, 0
-	}
-
-	var (
-		b    strings.Builder
-		last int
-	)
-	for _, match := range matches {
-		start, end := match[0], match[1]
-		destStart, destEnd := match[2], match[3]
-		full := line[start:end]
-
-		b.WriteString(line[last:start])
-		if strings.HasPrefix(full, "!") {
-			b.WriteString(full)
-			last = end
-			continue
-		}
-
-		newDest, changed := v.rewriteMarkdownDestRecursive(line[destStart:destEnd], sourceRelDir, target)
-		if !changed {
-			b.WriteString(full)
-			last = end
-			continue
-		}
-
-		b.WriteString(line[start:destStart])
-		b.WriteString(newDest)
-		b.WriteString(line[destEnd:end])
-		changes++
-		last = end
-	}
-	b.WriteString(line[last:])
-
-	return b.String(), changes
+	return replacement, true
 }
 
 func (v *Vault) rewriteMarkdownDestRecursive(dest, sourceRelDir string, target renameTarget) (string, bool) {
@@ -406,131 +448,6 @@ func normalizeLinkContext(lines []string) string {
 		return ""
 	}
 	return normalizePreviewLine(strings.Join(lines, " "))
-}
-
-func rewriteLinkLines(lines []textLine, oldKey, newName string, respectFences bool) (rewritten string, changes int) {
-	var (
-		b          strings.Builder
-		inFence    bool
-		fenceRune  rune
-		fenceWidth int
-	)
-
-	for _, line := range lines {
-		if respectFences {
-			trimmed := strings.TrimSpace(trimLine(line.text))
-			if marker, width, ok := fenceStart(trimmed); ok {
-				if inFence && marker == fenceRune && width >= fenceWidth {
-					inFence = false
-				} else if !inFence {
-					inFence = true
-					fenceRune = marker
-					fenceWidth = width
-				}
-				b.WriteString(line.text)
-				continue
-			}
-			if inFence {
-				b.WriteString(line.text)
-				continue
-			}
-		}
-
-		updated := line.text
-		var lineChanges int
-		updated, lineChanges = rewriteWikiLinks(updated, oldKey, newName)
-		changes += lineChanges
-		updated, lineChanges = rewriteMarkdownLinks(updated, oldKey, newName)
-		changes += lineChanges
-		b.WriteString(updated)
-	}
-
-	return b.String(), changes
-}
-
-func rewriteWikiLinks(line, oldKey, newName string) (rewritten string, changes int) {
-	matches := wikiLinkRE.FindAllStringIndex(maskInlineCode(line), -1)
-	if len(matches) == 0 {
-		return line, 0
-	}
-
-	var (
-		b    strings.Builder
-		last int
-	)
-	for _, match := range matches {
-		start, end := match[0], match[1]
-		b.WriteString(line[last:start])
-
-		full := line[start:end]
-		inner := full[2 : len(full)-2]
-		targetPart, label, hasLabel, escapedSeparator := splitWikiLinkParts(inner)
-		base, suffix := splitTargetSuffix(strings.TrimSpace(targetPart))
-		if documentKey(base) != oldKey {
-			b.WriteString(full)
-			last = end
-			continue
-		}
-
-		newTarget := newName + suffix
-		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(base)), ".md") {
-			newTarget = newName + ".md" + suffix
-		}
-		if hasLabel {
-			separator := "|"
-			if escapedSeparator {
-				separator = `\|`
-			}
-			b.WriteString("[[" + newTarget + separator + label + "]]")
-		} else {
-			b.WriteString("[[" + newTarget + "]]")
-		}
-		changes++
-		last = end
-	}
-	b.WriteString(line[last:])
-
-	return b.String(), changes
-}
-
-func rewriteMarkdownLinks(line, oldKey, newName string) (rewritten string, changes int) {
-	matches := markdownLinkRE.FindAllStringSubmatchIndex(maskInlineCode(line), -1)
-	if len(matches) == 0 {
-		return line, 0
-	}
-
-	var (
-		b    strings.Builder
-		last int
-	)
-	for _, match := range matches {
-		start, end := match[0], match[1]
-		destStart, destEnd := match[2], match[3]
-		full := line[start:end]
-
-		b.WriteString(line[last:start])
-		if strings.HasPrefix(full, "!") {
-			b.WriteString(full)
-			last = end
-			continue
-		}
-
-		newDest, changed := rewriteMarkdownDestination(line[destStart:destEnd], oldKey, newName)
-		if !changed {
-			b.WriteString(full)
-			last = end
-			continue
-		}
-
-		b.WriteString(line[start:destStart])
-		b.WriteString(newDest)
-		b.WriteString(line[destEnd:end])
-		changes++
-		last = end
-	}
-	b.WriteString(line[last:])
-
-	return b.String(), changes
 }
 
 func rewriteMarkdownDestination(dest, oldKey, newName string) (string, bool) {
