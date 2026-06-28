@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -193,101 +192,6 @@ func TestLoadMatchesUnicodeNormalizedNames(t *testing.T) {
 
 	if report := vault.Lint(); contains(report.Orphans, doc.Name) {
 		t.Fatalf("orphans = %#v, want %q to be linked", report.Orphans, doc.Name)
-	}
-}
-
-func TestLoadUsesPersistentCacheForUnchangedDocs(t *testing.T) {
-	useTempCacheDir(t)
-
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "Alpha.md"), "Alpha summary.\n\n[[Beta]]\n")
-	writeFile(t, filepath.Join(dir, "Beta.md"), "Beta summary.\n")
-
-	_, stats, err := loadVault(dir, Options{}, true)
-	if err != nil {
-		t.Fatalf("first loadVault() error = %v", err)
-	}
-	if stats.ParsedDocs != 2 || stats.CachedDocs != 0 {
-		t.Fatalf("first load stats = %#v, want Parsed=2 Cached=0", stats)
-	}
-
-	cachePath, err := cacheFilePath(filepath.Clean(dir), false)
-	if err != nil {
-		t.Fatalf("cacheFilePath() error = %v", err)
-	}
-	if _, err := os.Stat(cachePath); err != nil {
-		t.Fatalf("cache file stat error = %v", err)
-	}
-
-	vault, stats, err := loadVault(dir, Options{}, true)
-	if err != nil {
-		t.Fatalf("second loadVault() error = %v", err)
-	}
-	if stats.ParsedDocs != 0 || stats.CachedDocs != 2 {
-		t.Fatalf("second load stats = %#v, want Parsed=0 Cached=2", stats)
-	}
-
-	inbound := vault.InboundNames("Beta")
-	if len(inbound) != 1 || inbound[0] != "Alpha" {
-		t.Fatalf("InboundNames() = %#v, want [Alpha]", inbound)
-	}
-	alpha, err := vault.ResolveDocument("Alpha")
-	if err != nil {
-		t.Fatalf("ResolveDocument() error = %v", err)
-	}
-	if alpha.Excerpt != "Alpha summary." {
-		t.Fatalf("Excerpt = %q, want %q", alpha.Excerpt, "Alpha summary.")
-	}
-	report := vault.Lint()
-	if len(report.LinkOnlyLines) != 1 || report.LinkOnlyLines[0].Document != "Alpha" || report.LinkOnlyLines[0].Line != 3 {
-		t.Fatalf("LinkOnlyLines after cached load = %#v, want Alpha line 3", report.LinkOnlyLines)
-	}
-}
-
-func TestLoadReparsesOnlyChangedDocuments(t *testing.T) {
-	useTempCacheDir(t)
-
-	dir := t.TempDir()
-	alphaPath := filepath.Join(dir, "Alpha.md")
-	writeFile(t, alphaPath, "Old summary.\n\n[[Beta]]\n")
-	writeFile(t, filepath.Join(dir, "Beta.md"), "Beta summary.\n")
-
-	if _, _, err := loadVault(dir, Options{}, true); err != nil {
-		t.Fatalf("initial loadVault() error = %v", err)
-	}
-
-	info, err := os.Stat(alphaPath)
-	if err != nil {
-		t.Fatalf("Stat() error = %v", err)
-	}
-	newContent := "New summary.\n\n[[Gamma]]\n"
-	if err := os.WriteFile(alphaPath, []byte(newContent), 0o644); err != nil {
-		t.Fatalf("write changed Alpha.md: %v", err)
-	}
-	nextTime := info.ModTime().Add(time.Second)
-	if err := os.Chtimes(alphaPath, nextTime, nextTime); err != nil {
-		t.Fatalf("Chtimes() error = %v", err)
-	}
-	writeFile(t, filepath.Join(dir, "Gamma.md"), "")
-
-	vault, stats, err := loadVault(dir, Options{}, true)
-	if err != nil {
-		t.Fatalf("changed loadVault() error = %v", err)
-	}
-	if stats.ParsedDocs != 2 || stats.CachedDocs != 1 {
-		t.Fatalf("changed load stats = %#v, want Parsed=2 Cached=1", stats)
-	}
-
-	outbound := vault.OutboundSummaries("Alpha")
-	if len(outbound) != 1 || outbound[0].Name != "Gamma" || outbound[0].Missing {
-		t.Fatalf("OutboundSummaries() = %#v, want resolved Gamma", outbound)
-	}
-	alpha, err := vault.ResolveDocument("Alpha")
-	if err != nil {
-		t.Fatalf("ResolveDocument() error = %v", err)
-	}
-	if alpha.Excerpt != "New summary." {
-		t.Fatalf("Excerpt = %q, want %q", alpha.Excerpt, "New summary.")
 	}
 }
 
@@ -783,17 +687,4 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func useTempCacheDir(t testing.TB) {
-	t.Helper()
-
-	dir := t.TempDir()
-	previous := userCacheDir
-	userCacheDir = func() (string, error) {
-		return dir, nil
-	}
-	t.Cleanup(func() {
-		userCacheDir = previous
-	})
 }

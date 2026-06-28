@@ -63,22 +63,6 @@ awiki version
 
 Each command accepts `-root <dir>` to point at a wiki directory explicitly.
 
-## Cache
-
-`awiki` stores parsed wiki state under the user cache directory rather than the
-config directory.
-
-Examples:
-
-- macOS: `~/Library/Caches/awiki`
-- Linux: `~/.cache/awiki`
-
-Each wiki root gets its own hashed cache directory. On later runs, unchanged
-Markdown files are reused from cache and only files with changed modification
-times or sizes are reparsed. The cache also stores each document's first
-visible content line so commands that print page previews do not need to reread
-every file.
-
 ## Related Docs
 
 - [Overview](overview.md) — quick start and install paths

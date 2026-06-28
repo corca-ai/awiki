@@ -27,7 +27,6 @@ It is responsible for:
 This package owns the wiki model and behavior.
 
 - `vault.go` loads documents, resolves identifiers, builds the graph, and implements `lint`, `path`, and `links` queries
-- `cache.go` stores parsed document metadata and first-visible-line previews in the user cache directory and reuses them on subsequent loads
 - `frontmatter.go` parses supported front matter fields and updates `title` during rename
 - `links.go` parses supported link syntax in front matter and body text, and rewrites matching links during rename
 - `rename.go` coordinates file renaming and atomic file rewrites
@@ -39,7 +38,6 @@ This package owns the wiki model and behavior.
 - identifier resolution is case-insensitive
 - identifier resolution normalizes Unicode so macOS and Linux filenames resolve consistently
 - graph connectivity resolves links by canonical document identity (basename when flat, repo-relative path when recursive, Obsidian-aligned); front matter `title` and `aliases` do not participate
-- parsed vault state is cached under the user cache directory and invalidated by file `mtime` and size changes
 - broken links are allowed and preserved
 - graph connectivity ignores unresolved links and self-links
 - rename avoids rewriting code fences, images, and external links

@@ -25,10 +25,10 @@ func (v *Vault) buildGraph() {
 				continue
 			}
 
-			// Mutate the link in place so callers (and the gob cache) record
-			// the canonical document name, not whatever spelling the source
-			// used. Resolution lives here because it depends on the full
-			// docsByKey index, which only exists after Load completes.
+			// Mutate the link in place so callers see the canonical document
+			// name, not whatever spelling the source used. Resolution lives
+			// here because it depends on the full docsByKey index, which only
+			// exists after Load completes.
 			doc.Links[i].Resolved = target.Name
 			if doc.Key == target.Key {
 				continue

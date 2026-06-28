@@ -45,14 +45,6 @@ type Vault struct {
 	undirected map[string]map[string]struct{}
 }
 
-type cacheState struct {
-	cache    vaultCache
-	ok       bool
-	dirty    bool
-	next     vaultCache
-	useCache bool
-}
-
 func Load(root string) (*Vault, error) {
 	return LoadWithOptions(root, Options{})
 }
@@ -60,47 +52,27 @@ func Load(root string) (*Vault, error) {
 // LoadWithOptions loads a vault, honoring Options. With Options{Recursive:true}
 // it walks subdirectories and identifies documents by repo-relative path.
 func LoadWithOptions(root string, opts Options) (*Vault, error) {
-	vault, _, err := loadVault(root, opts, true)
-	return vault, err
-}
-
-func loadVault(root string, opts Options, useCache bool) (*Vault, loadStats, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return nil, loadStats{}, err
+		return nil, err
 	}
 
 	files, err := discoverFiles(absRoot, opts.Recursive)
 	if err != nil {
-		return nil, loadStats{}, err
+		return nil, err
 	}
 
 	vault := newVault(absRoot, opts.Recursive)
-	cache := newCacheState(absRoot, opts.Recursive, useCache)
-	var stats loadStats
-
 	for _, file := range files {
-		cached, loaded, err := loadVaultEntry(vault, file, cache)
-		if err != nil {
-			return nil, loadStats{}, err
-		}
-		if !loaded {
-			continue
-		}
-		if cached {
-			stats.CachedDocs++
-		} else {
-			stats.ParsedDocs++
-			cache.dirty = true
+		if err := loadVaultEntry(vault, file); err != nil {
+			return nil, err
 		}
 	}
-
-	finalizeCacheState(absRoot, cache)
 
 	vault.buildIdentifiers()
 	vault.buildBasenames()
 	vault.buildGraph()
-	return vault, stats, nil
+	return vault, nil
 }
 
 // discoveredFile is a markdown document found during discovery, carrying both
@@ -108,7 +80,6 @@ func loadVault(root string, opts Options, useCache bool) (*Vault, loadStats, err
 type discoveredFile struct {
 	abs     string
 	relFile string
-	info    os.FileInfo
 }
 
 func discoverFiles(root string, recursive bool) ([]discoveredFile, error) {
@@ -129,14 +100,9 @@ func discoverFilesFlat(root string) ([]discoveredFile, error) {
 		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
 			continue
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return nil, err
-		}
 		files = append(files, discoveredFile{
 			abs:     filepath.Join(root, entry.Name()),
 			relFile: entry.Name(),
-			info:    info,
 		})
 	}
 	sortDiscoveredFiles(files)
@@ -162,14 +128,9 @@ func discoverFilesRecursive(root string) ([]discoveredFile, error) {
 		if err != nil {
 			return err
 		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
 		files = append(files, discoveredFile{
 			abs:     p,
 			relFile: filepath.ToSlash(rel),
-			info:    info,
 		})
 		return nil
 	})
@@ -213,40 +174,7 @@ func newVault(root string, recursive bool) *Vault {
 	}
 }
 
-func newCacheState(root string, recursive, useCache bool) *cacheState {
-	state := &cacheState{
-		useCache: useCache,
-		next: vaultCache{
-			Version:   vaultCacheVersion,
-			Root:      root,
-			Recursive: recursive,
-			Docs:      make(map[string]cachedDocument),
-		},
-	}
-	if !useCache {
-		return state
-	}
-
-	state.cache, state.ok = readVaultCache(root, recursive)
-	if !state.ok {
-		state.dirty = true
-	}
-	return state
-}
-
-func finalizeCacheState(root string, state *cacheState) {
-	if !state.useCache {
-		return
-	}
-	if !state.dirty && (!state.ok || len(state.cache.Docs) != len(state.next.Docs)) {
-		state.dirty = true
-	}
-	if state.dirty {
-		writeVaultCache(root, state.next)
-	}
-}
-
-func loadVaultEntry(vault *Vault, file discoveredFile, state *cacheState) (cached, loaded bool, err error) {
+func loadVaultEntry(vault *Vault, file discoveredFile) error {
 	relPath := strings.TrimSuffix(file.relFile, filepath.Ext(file.relFile))
 	name := relPath
 	if !vault.recursive {
@@ -254,17 +182,16 @@ func loadVaultEntry(vault *Vault, file discoveredFile, state *cacheState) (cache
 	}
 	key, err := validateDocumentKey(vault, file.relFile, relPath)
 	if err != nil {
-		return false, false, err
+		return err
 	}
 
-	doc, cached, err := loadDocument(file.abs, file.relFile, name, key, relPath, file.info, state.cache)
+	doc, err := loadDocument(file.abs, name, key, relPath)
 	if err != nil {
-		return false, false, err
+		return err
 	}
 
 	addDocumentToVault(vault, doc)
-	state.next.Docs[file.relFile] = cachedDocumentFor(doc, file.relFile, file.info)
-	return cached, true, nil
+	return nil
 }
 
 func (v *Vault) documentKeyFor(relPath string) string {
@@ -290,43 +217,10 @@ func addDocumentToVault(vault *Vault, doc *Document) {
 	vault.docsByKey[doc.Key] = doc
 }
 
-func cachedDocumentFor(doc *Document, relFile string, info os.FileInfo) cachedDocument {
-	return cachedDocument{
-		RelFile:     relFile,
-		Name:        doc.Name,
-		Key:         doc.Key,
-		RelPath:     doc.RelPath,
-		MTimeNS:     info.ModTime().UnixNano(),
-		Size:        info.Size(),
-		Excerpt:     doc.Excerpt,
-		FrontMatter: doc.FrontMatter,
-		Links:       cloneLinks(doc.Links),
-		LinkOnly:    cloneLinkOnlyLines(doc.LinkOnly),
-	}
-}
-
-func loadDocument(path, relFile, name, key, relPath string, info os.FileInfo, cache vaultCache) (*Document, bool, error) {
-	if cached, ok := cache.Docs[relFile]; ok &&
-		cached.Name == name &&
-		cached.Key == key &&
-		cached.RelPath == relPath &&
-		cached.MTimeNS == info.ModTime().UnixNano() &&
-		cached.Size == info.Size() {
-		return &Document{
-			Name:        cached.Name,
-			Key:         cached.Key,
-			Path:        path,
-			RelPath:     cached.RelPath,
-			Excerpt:     cached.Excerpt,
-			FrontMatter: cached.FrontMatter,
-			Links:       cloneLinks(cached.Links),
-			LinkOnly:    cloneLinkOnlyLines(cached.LinkOnly),
-		}, true, nil
-	}
-
+func loadDocument(path, name, key, relPath string) (*Document, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	content := string(data)
 	return &Document{
@@ -338,7 +232,7 @@ func loadDocument(path, relFile, name, key, relPath string, info os.FileInfo, ca
 		FrontMatter: ParseFrontMatter(content),
 		Links:       ParseLinks(content),
 		LinkOnly:    FindLinkOnlyLines(content),
-	}, false, nil
+	}, nil
 }
 
 func (v *Vault) ResolveDocument(identifier string) (*Document, error) {
