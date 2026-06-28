@@ -26,7 +26,8 @@ If needed, add `~/bin` near the front of your shell profile:
 export PATH="$HOME/bin:$PATH"
 ```
 
-For release builds, inject the version via `ldflags`:
+For tagged releases, `cargo-dist` reads the version from `Cargo.toml` and the
+tag. Local development builds use:
 
 ```sh
 AWIKI_VERSION=v0.1.0 ./scripts/build.sh

@@ -9,7 +9,7 @@ GitHub Actions defines two repository workflows:
 
 ## Tagged Release Flow
 
-Pushing a `v*` tag triggers the release workflow:
+Pushing a SemVer tag triggers the cargo-dist release workflow:
 
 ```sh
 git tag v0.1.0
@@ -18,22 +18,27 @@ git push origin v0.1.0
 
 The release workflow:
 
-- builds the Rust binary in release mode
-- creates a release archive
+- runs the repository CI quality gate
+- builds release archives for macOS and Linux targets
+- creates shell and Homebrew installers
 - publishes a GitHub Release
+- pushes the Homebrew formula to `corca-ai/homebrew-tap`
 
 ## Repository Assumptions
 
 Current release configuration assumes:
 
 - GitHub repository: `corca-ai/awiki`
+- Homebrew tap: `corca-ai/homebrew-tap`
+- Homebrew formula: `awiki`
+- CI secret: `HOMEBREW_TAP_TOKEN` with push access to the tap
 
-If that changes, update `.github/workflows/release.yml` and `install.sh`.
+If those change, update `dist-workspace.toml`, `.github/workflows/release.yml`,
+and `install.sh`.
 
 ## Homebrew
 
-If a Homebrew formula is published, it should install the `awiki` binary and
-verify it with:
+The Homebrew formula installs the `awiki` binary and verifies it with:
 
 ```sh
 awiki version

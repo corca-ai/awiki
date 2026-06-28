@@ -1,0 +1,7 @@
+# Clippy configuration — complexity / readability ratchets.
+# Run: cargo clippy --all-targets --all-features -- -D warnings
+
+cognitive-complexity-threshold = 24
+too-many-lines-threshold = 220
+too-many-arguments-threshold = 7
+type-complexity-threshold = 250

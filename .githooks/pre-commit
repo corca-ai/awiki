@@ -6,11 +6,11 @@ cd "$(git rev-parse --show-toplevel)"
 cleanup() { rm -rf .tmp-bin; }
 trap cleanup EXIT
 
-echo "Running tests..."
-./scripts/test.sh
+echo "Running format check..."
+cargo fmt --all --check
 
-echo "Running lint..."
-./scripts/lint.sh
+echo "Running tests..."
+cargo test --locked
 
 echo "Building awiki..."
 mkdir -p .tmp-bin

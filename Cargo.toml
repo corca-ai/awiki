@@ -2,6 +2,11 @@
 name = "awiki"
 version = "0.1.0"
 edition = "2021"
+description = "CLI for exploring and maintaining flat-file Markdown wikis"
+license = "MIT"
+homepage = "https://github.com/corca-ai/awiki"
+repository = "https://github.com/corca-ai/awiki"
+rust-version = "1.85"
 
 [dependencies]
 rand = "0.8"
@@ -13,6 +18,26 @@ unicode-normalization = "0.1"
 tempfile = "3.14"
 
 [profile.release]
+opt-level = 3
 codegen-units = 1
 lto = "thin"
 strip = true
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+elided_lifetimes_in_paths = "allow"
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+uninlined_format_args = "warn"
+cognitive_complexity = "warn"
+too_many_lines = "warn"
+match_wildcard_for_single_variants = "warn"

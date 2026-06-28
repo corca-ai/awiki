@@ -1,21 +1,82 @@
-name: CI
+name: ci
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
+    name: build · test · lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo fmt --check
-      - run: cargo test --locked
-      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
-      - run: cargo build --locked --release
+      - name: format
+        run: cargo fmt --all --check
+      - name: file-length ratchet
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "${GITHUB_BASE_REF:-}" ]; then
+            ratchet_base="origin/${GITHUB_BASE_REF}"
+          else
+            ratchet_base="${PUSH_BEFORE:-HEAD^}"
+            if [ -z "$ratchet_base" ] || [[ "$ratchet_base" =~ ^0+$ ]]; then
+              ratchet_base="HEAD^"
+            fi
+            if ! git rev-parse --verify -q "$ratchet_base^{commit}" >/dev/null; then
+              ratchet_base="HEAD^"
+            fi
+          fi
+          python3 scripts/check-file-lengths.py --self-test
+          python3 scripts/check-file-lengths.py --ratchet-base "$ratchet_base"
+      - name: clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: doc
+        run: cargo doc --locked --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: build
+        run: cargo build --locked --release
+      - name: test
+        run: cargo test --locked --release
+
+  msrv:
+    name: minimum supported rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - id: msrv
+        run: echo "v=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*\"(.*)\".*/\1/')" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.v }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo "+${{ steps.msrv.outputs.v }}" check --locked --all-targets
+
+  supply-chain:
+    name: unused-deps · advisories · licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete,cargo-deny
+      - name: cargo-machete
+        run: cargo machete
+      - name: cargo-deny
+        run: cargo deny check

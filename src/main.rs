@@ -187,7 +187,7 @@ fn usage() {
 }
 
 fn version() -> &'static str {
-    option_env!("AWIKI_VERSION").unwrap_or("dev")
+    option_env!("AWIKI_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
 }
 
 fn parse_common(args: &[String]) -> Result<Args, String> {
@@ -1826,7 +1826,7 @@ fn clean_path(p: &str) -> String {
             }
             Component::Normal(s) => parts.push(s.to_str().unwrap_or("")),
             Component::RootDir => parts.clear(),
-            _ => {}
+            Component::Prefix(_) => {}
         }
     }
     if parts.is_empty() {
