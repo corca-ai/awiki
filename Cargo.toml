@@ -1,6 +1,6 @@
 [package]
 name = "awiki"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 description = "CLI for exploring and maintaining flat-file Markdown wikis"
 license = "MIT"
