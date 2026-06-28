@@ -9,7 +9,7 @@ repository = "https://github.com/corca-ai/awiki"
 rust-version = "1.85"
 
 [dependencies]
-rand = "0.8"
+rand = "0.10"
 rayon = "1.10"
 rustc-hash = "2.1"
 unicode-normalization = "0.1"
