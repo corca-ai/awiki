@@ -2,6 +2,8 @@ use std::fs;
 
 use tempfile::tempdir;
 
+use crate::output::format_lint_report;
+
 use super::{format_suggest_report, Options, SuggestFilter, SuggestOptions, Vault};
 
 #[test]
@@ -31,6 +33,10 @@ fn lint_finds_link_only_lines_but_allows_two_links() {
             (6, "- [[Beta|B]]")
         ]
     );
+    let output = format_lint_report(&vault, &report);
+    assert!(output.contains("// why: a line with only one link"));
+    assert!(output.contains("// fix: add a short phrase"));
+    assert!(output.contains("// example: - [[Bayes theorem]] ->"));
 }
 
 #[test]
@@ -112,4 +118,7 @@ fn suggest_reports_refactoring_candidates() {
     assert!(output.contains("// sampled_diameter"));
     assert!(output.contains("// wanted_pressure"));
     assert!(output.contains("// near_duplicates"));
+    assert!(output.contains("// why: these sampled paths are long"));
+    assert!(output.contains("// fix: create the page, correct misspelled links"));
+    assert!(output.contains("// example: split \"Machine learning\""));
 }

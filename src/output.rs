@@ -45,6 +45,12 @@ pub(crate) fn format_lint_report(vault: &Vault, report: &LintReport) -> String {
     );
     if !report.orphans.is_empty() {
         out.push_str("\n// orphan");
+        append_guidance(
+            &mut out,
+            "no resolved links connect these pages to the wiki graph, so readers and agents are unlikely to discover them.",
+            "add a contextual link to or from a related page, or merge/delete the note if it has no durable role.",
+            "add \"Compare with [[Related page]] ...\" from the orphan, or link to it from a relevant index page.",
+        );
         for &idx in &report.orphans {
             out.push('\n');
             out.push_str(&vault.document_line(idx));
@@ -52,6 +58,14 @@ pub(crate) fn format_lint_report(vault: &Vault, report: &LintReport) -> String {
     }
     for (i, island) in report.islands.iter().enumerate() {
         out.push_str(&format!("\n// island={}", i + 1));
+        if i == 0 {
+            append_guidance(
+                &mut out,
+                "this component links internally but is disconnected from the main wiki, so related knowledge is hard to reach.",
+                "add one or two bridge links between a page below and a relevant page in the main component.",
+                "connect the island's strongest overview page to one main-component page with a real relationship.",
+            );
+        }
         for &idx in island {
             out.push('\n');
             out.push_str(&vault.document_line(idx));
@@ -59,6 +73,12 @@ pub(crate) fn format_lint_report(vault: &Vault, report: &LintReport) -> String {
     }
     if !report.link_only_lines.is_empty() {
         out.push_str("\n// link_only_line");
+        append_guidance(
+            &mut out,
+            "a line with only one link gives no local context, and grep results become hard to interpret.",
+            "add a short phrase explaining the relationship, or rewrite the link into a sentence.",
+            "- [[Bayes theorem]] -> - See [[Bayes theorem]] for updating beliefs with evidence.",
+        );
         for (idx, issue) in &report.link_only_lines {
             out.push_str(&format!(
                 "\n[[{}]]:{}: {}",
@@ -67,6 +87,12 @@ pub(crate) fn format_lint_report(vault: &Vault, report: &LintReport) -> String {
         }
     }
     out
+}
+
+fn append_guidance(out: &mut String, why: &str, fix: &str, example: &str) {
+    out.push_str(&format!(
+        "\n// why: {why}\n// fix: {fix}\n// example: {example}"
+    ));
 }
 
 fn format_document_line(name: &str, preview: &str) -> String {

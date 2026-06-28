@@ -227,6 +227,12 @@ fn format_sampled_diameter(vault: &Vault, s: &SampledDiameterSuggestion, out: &m
         s.sampled_diameter,
         s.paths.len()
     ));
+    append_guidance(
+        out,
+        "these sampled paths are long, so related topics may only connect through many weak hops.",
+        "inspect the endpoints and middle bridge pages; add contextual links or a bridge note where the relationship is real.",
+        "if two endpoints are clearly related, add a sentence-level link from the stronger overview page.",
+    );
     for path in &s.paths {
         out.push_str(&format!(
             "\n// path distance={}",
@@ -241,6 +247,12 @@ fn format_sampled_diameter(vault: &Vault, s: &SampledDiameterSuggestion, out: &m
 
 fn format_wanted_pressure(pages: &[WantedPage], out: &mut String) {
     out.push_str(&format!("\n// wanted_pressure pages={}", pages.len()));
+    append_guidance(
+        out,
+        "many notes point at these missing pages, so the wiki already depends on absent concepts.",
+        "create the page, correct misspelled links, or consolidate equivalent names with a rename/redirect note.",
+        "if [[Vector database]] is linked from many pages, create it as a hub or correct links to an existing page.",
+    );
     if pages.is_empty() {
         out.push_str("\n_ none");
         return;
@@ -272,6 +284,7 @@ fn format_page_length(vault: &Vault, label: &str, pages: &PageLengthSuggestion, 
             pages.pages.len()
         )),
     }
+    append_page_length_guidance(label, out);
     if pages.pages.is_empty() {
         out.push_str("\n_ none");
         return;
@@ -293,6 +306,12 @@ fn format_near_duplicates(vault: &Vault, dups: &NearDuplicateSuggestion, out: &m
         dups.candidates,
         dups.pairs.len()
     ));
+    append_guidance(
+        out,
+        "these pages share unusually similar text, which can split links and let two versions drift apart.",
+        "compare both pages, merge the weaker one into the stronger one, then rename or update links as needed.",
+        "keep the clearer page, move any unique detail into it, then update links from the weaker page.",
+    );
     if dups.pairs.is_empty() {
         out.push_str("\n_ none");
         return;
@@ -310,4 +329,28 @@ fn format_near_duplicates(vault: &Vault, dups: &NearDuplicateSuggestion, out: &m
         out.push_str(&format!("\n- {}", vault.document_line(pair.a)));
         out.push_str(&format!("\n- {}", vault.document_line(pair.b)));
     }
+}
+
+fn append_page_length_guidance(label: &str, out: &mut String) {
+    match label {
+        "long_pages" => append_guidance(
+            out,
+            "long pages often mix several concepts, making them harder to scan, link to, and maintain.",
+            "split stable subtopics into separate pages, then leave a short summary with links.",
+            "split \"Machine learning\" into \"Supervised learning\", \"Evaluation metrics\", and a short overview page.",
+        ),
+        "short_stubs" => append_guidance(
+            out,
+            "very short pages may add navigation cost without enough context to justify a separate note.",
+            "expand the note, merge it into a stronger related page, or delete it if it is only a placeholder.",
+            "merge \"Backpropagation note\" into [[Backpropagation]] unless it has a distinct role.",
+        ),
+        _ => {}
+    }
+}
+
+fn append_guidance(out: &mut String, why: &str, fix: &str, example: &str) {
+    out.push_str(&format!(
+        "\n// why: {why}\n// fix: {fix}\n// example: {example}"
+    ));
 }

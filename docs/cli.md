@@ -57,10 +57,19 @@ On failure, stdout prints:
 
 - `// lint_failed documents=<n> orphans=<n> islands=<n> link_only_lines=<n> largest_component_ratio=<r> orphan_rate=<r> content_coverage=<r>`
 - `// orphan`
+- `// why: ...`
+- `// fix: ...`
+- `// example: ...`
 - `[[Page Name]]: First visible line`
 - `// island=<component>`
+- `// why: ...`
+- `// fix: ...`
+- `// example: ...`
 - `[[Page Name]]: First visible line`
 - `// link_only_line`
+- `// why: ...`
+- `// fix: ...`
+- `// example: ...`
 - `[[Page Name]]:<line>: <source line>`
 
 Example:
@@ -211,11 +220,17 @@ Common output shape:
 ```text
 // suggest documents=8042 filters=sampled-diameter,wanted-pressure
 // sampled_diameter samples=2000 sampled_diameter=9 paths=5
+// why: these sampled paths are long, so related topics may only connect through many weak hops.
+// fix: inspect the endpoints and middle bridge pages; add contextual links or a bridge note where the relationship is real.
+// example: if two endpoints are clearly related, add a sentence-level link from the stronger overview page.
 // path distance=9
 [[Source page]]: First visible line.
 [[Bridge page]]: First visible line.
 [[Target page]]: First visible line.
 // wanted_pressure pages=10
+// why: many notes point at these missing pages, so the wiki already depends on absent concepts.
+// fix: create the page, correct misspelled links, or consolidate equivalent names with a rename/redirect note.
+// example: if [[Vector database]] is linked from many pages, create it as a hub or correct links to an existing page.
 [[Missing note]] mentions=5 source_documents=3
 - [[Referencing page]]: Local line that mentions [[Missing note]].
 ```
