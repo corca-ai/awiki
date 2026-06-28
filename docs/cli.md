@@ -33,16 +33,21 @@ Checks the undirected document graph.
 - `largest_component_ratio`: size of the largest connected component divided by all documents
 - `orphan_rate`: orphan documents divided by all documents
 - `content_coverage`: documents with a first visible content line divided by all documents
+- Link-only line: a body line whose only meaningful content is one document
+  link, such as `- [[Page]]`, `**[[Page]]**`, `[Page](Page.md)`, or
+  `[[Page|Label]]`. Lines with two or more links are allowed by this rule.
 
-If either exists, `lint` exits non-zero.
+If any lint issue exists, `lint` exits non-zero.
 
 On failure, stdout prints:
 
-- `// lint_failed documents=<n> orphans=<n> islands=<n> largest_component_ratio=<r> orphan_rate=<r> content_coverage=<r>`
+- `// lint_failed documents=<n> orphans=<n> islands=<n> link_only_lines=<n> largest_component_ratio=<r> orphan_rate=<r> content_coverage=<r>`
 - `// orphan`
 - `[[Page Name]]: First visible line`
 - `// island=<component>`
 - `[[Page Name]]: First visible line`
+- `// link_only_line`
+- `[[Page Name]]:<line>: <source line>`
 
 Example:
 

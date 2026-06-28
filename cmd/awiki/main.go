@@ -479,10 +479,11 @@ func truncateRunes(value string, limit int) string {
 func formatLintReport(vault *wiki.Vault, report wiki.LintReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b,
-		"// lint_failed documents=%d orphans=%d islands=%d largest_component_ratio=%.4f orphan_rate=%.4f content_coverage=%.4f",
+		"// lint_failed documents=%d orphans=%d islands=%d link_only_lines=%d largest_component_ratio=%.4f orphan_rate=%.4f content_coverage=%.4f",
 		report.DocumentCount,
 		len(report.Orphans),
 		len(report.Islands),
+		len(report.LinkOnlyLines),
 		report.LargestComponentRatio(),
 		report.OrphanRate(),
 		report.ContentCoverage(),
@@ -503,6 +504,13 @@ func formatLintReport(vault *wiki.Vault, report wiki.LintReport) string {
 				b.WriteString("\n")
 				b.WriteString(formatDocumentIssue(vault, name))
 			}
+		}
+	}
+
+	if len(report.LinkOnlyLines) > 0 {
+		b.WriteString("\n// link_only_line")
+		for _, issue := range report.LinkOnlyLines {
+			fmt.Fprintf(&b, "\n[[%s]]:%d: %s", issue.Document, issue.Line, issue.Text)
 		}
 	}
 

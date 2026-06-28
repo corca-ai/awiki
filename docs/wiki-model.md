@@ -89,6 +89,9 @@ gardening workflow and for ranking missing pages with `wanted`.
 - `lint` checks an undirected graph built from resolved links
 - an orphan has no resolved inbound or outbound links
 - an island is a connected component outside the largest component
+- `lint` also flags body lines whose only meaningful content is one document
+  link, because link-only lines lack reading context; lines with two or more
+  links are allowed by this rule
 - `path` uses the same undirected graph
 - `links` shows resolved links first, then missing outbound links
 - `wanted` ranks unresolved links by missing target page

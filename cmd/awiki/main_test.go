@@ -269,7 +269,34 @@ func TestFormatLintReport(t *testing.T) {
 	}
 
 	got := formatLintReport(vault, report)
-	want := "// lint_failed documents=3 orphans=1 islands=1 largest_component_ratio=0.6667 orphan_rate=0.3333 content_coverage=1.0000\n// orphan\n[[Orphan]]: Orphan summary.\n// island=1\n[[IslandA]]: Island A summary.\n[[IslandB]]: Island B summary."
+	want := "// lint_failed documents=3 orphans=1 islands=1 link_only_lines=0 largest_component_ratio=0.6667 orphan_rate=0.3333 content_coverage=1.0000\n// orphan\n[[Orphan]]: Orphan summary.\n// island=1\n[[IslandA]]: Island A summary.\n[[IslandB]]: Island B summary."
+	if got != want {
+		t.Fatalf("formatLintReport() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatLintReportIncludesLinkOnlyLines(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "Alpha.md"), "Alpha summary.\n\n- [[Beta]]\n")
+
+	vault, err := wiki.Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	report := wiki.LintReport{
+		DocumentCount:        1,
+		LargestComponentSize: 1,
+		CoveredDocuments:     1,
+		LinkOnlyLines: []wiki.LinkOnlyLineIssue{{
+			Document: "Alpha",
+			Line:     3,
+			Text:     "- [[Beta]]",
+		}},
+	}
+
+	got := formatLintReport(vault, report)
+	want := "// lint_failed documents=1 orphans=0 islands=0 link_only_lines=1 largest_component_ratio=1.0000 orphan_rate=0.0000 content_coverage=1.0000\n// link_only_line\n[[Alpha]]:3: - [[Beta]]"
 	if got != want {
 		t.Fatalf("formatLintReport() = %q, want %q", got, want)
 	}
@@ -277,7 +304,7 @@ func TestFormatLintReport(t *testing.T) {
 
 func TestLintCmdPrintsMetricsOnSuccess(t *testing.T) {
 	dir := t.TempDir()
-	writeTestFile(t, filepath.Join(dir, "Alpha.md"), "Alpha summary.\n\n[[Beta]]\n")
+	writeTestFile(t, filepath.Join(dir, "Alpha.md"), "Alpha summary.\n\nSee [[Beta]] for details.\n")
 	writeTestFile(t, filepath.Join(dir, "Beta.md"), "Beta summary.\n")
 
 	oldStdout, oldStderr := stdout, stderr

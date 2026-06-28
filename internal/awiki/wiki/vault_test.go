@@ -238,6 +238,10 @@ func TestLoadUsesPersistentCacheForUnchangedDocs(t *testing.T) {
 	if alpha.Excerpt != "Alpha summary." {
 		t.Fatalf("Excerpt = %q, want %q", alpha.Excerpt, "Alpha summary.")
 	}
+	report := vault.Lint()
+	if len(report.LinkOnlyLines) != 1 || report.LinkOnlyLines[0].Document != "Alpha" || report.LinkOnlyLines[0].Line != 3 {
+		t.Fatalf("LinkOnlyLines after cached load = %#v, want Alpha line 3", report.LinkOnlyLines)
+	}
 }
 
 func TestLoadReparsesOnlyChangedDocuments(t *testing.T) {
@@ -505,6 +509,43 @@ func TestLintFindsOrphansAndIslands(t *testing.T) {
 	}
 	if got := report.Islands[0]; len(got) != 2 || got[0] != "Delta" || got[1] != "Gamma" {
 		t.Fatalf("island = %#v, want [Delta Gamma]", got)
+	}
+}
+
+func TestLintFindsSingleLinkOnlyLines(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Alpha.md"), "---\nrelated: [[Beta]]\n---\nAlpha summary.\n\n- [[Beta]]\n- **[[Beta]]**\n- [Beta](Beta.md)\n- [[Beta|B]]\n- [[Beta]] [[Gamma]]\n- [[Beta]] and [[Gamma]]\n- [[Beta]] explains Beta.\n```\n- [[Beta]]\n```\n")
+	writeFile(t, filepath.Join(dir, "Beta.md"), "Beta summary.\n")
+	writeFile(t, filepath.Join(dir, "Gamma.md"), "Gamma summary.\n")
+
+	vault, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	report := vault.Lint()
+	if len(report.Orphans) != 0 {
+		t.Fatalf("orphans = %#v, want none", report.Orphans)
+	}
+	if len(report.Islands) != 0 {
+		t.Fatalf("islands = %#v, want none", report.Islands)
+	}
+	want := []LinkOnlyLineIssue{
+		{Document: "Alpha", Line: 6, Text: "- [[Beta]]"},
+		{Document: "Alpha", Line: 7, Text: "- **[[Beta]]**"},
+		{Document: "Alpha", Line: 8, Text: "- [Beta](Beta.md)"},
+		{Document: "Alpha", Line: 9, Text: "- [[Beta|B]]"},
+	}
+	if len(report.LinkOnlyLines) != len(want) {
+		t.Fatalf("LinkOnlyLines = %#v, want %#v", report.LinkOnlyLines, want)
+	}
+	for i := range want {
+		if report.LinkOnlyLines[i] != want[i] {
+			t.Fatalf("LinkOnlyLines[%d] = %#v, want %#v", i, report.LinkOnlyLines[i], want[i])
+		}
+	}
+	if !report.HasIssues() {
+		t.Fatalf("HasIssues() = false, want true")
 	}
 }
 

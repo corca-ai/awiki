@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	vaultCacheVersion = 6
-	vaultCacheDir     = "v6"
+	vaultCacheVersion = 7
+	vaultCacheDir     = "v7"
 )
 
 var userCacheDir = os.UserCacheDir
@@ -38,6 +38,7 @@ type cachedDocument struct {
 	Excerpt     string
 	FrontMatter FrontMatter
 	Links       []Link
+	LinkOnly    []LinkOnlyLine
 }
 
 func init() {
@@ -45,6 +46,7 @@ func init() {
 	gob.Register(cachedDocument{})
 	gob.Register(FrontMatter{})
 	gob.Register(Link{})
+	gob.Register(LinkOnlyLine{})
 }
 
 func cacheFilePath(root string, recursive bool) (string, error) {
@@ -140,5 +142,15 @@ func cloneLinks(links []Link) []Link {
 	for i := range cloned {
 		cloned[i].Resolved = ""
 	}
+	return cloned
+}
+
+func cloneLinkOnlyLines(lines []LinkOnlyLine) []LinkOnlyLine {
+	if len(lines) == 0 {
+		return nil
+	}
+
+	cloned := make([]LinkOnlyLine, len(lines))
+	copy(cloned, lines)
 	return cloned
 }

@@ -15,4 +15,4 @@ which identifies documents by repo-relative path.
 
 ## License
 
-[MIT](LICENSE)
+Released under the [MIT](LICENSE) license.

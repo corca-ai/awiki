@@ -19,6 +19,7 @@ type Document struct {
 	Excerpt     string
 	FrontMatter FrontMatter
 	Links       []Link
+	LinkOnly    []LinkOnlyLine
 }
 
 // Options controls how a vault is loaded.
@@ -300,6 +301,7 @@ func cachedDocumentFor(doc *Document, relFile string, info os.FileInfo) cachedDo
 		Excerpt:     doc.Excerpt,
 		FrontMatter: doc.FrontMatter,
 		Links:       cloneLinks(doc.Links),
+		LinkOnly:    cloneLinkOnlyLines(doc.LinkOnly),
 	}
 }
 
@@ -318,6 +320,7 @@ func loadDocument(path, relFile, name, key, relPath string, info os.FileInfo, ca
 			Excerpt:     cached.Excerpt,
 			FrontMatter: cached.FrontMatter,
 			Links:       cloneLinks(cached.Links),
+			LinkOnly:    cloneLinkOnlyLines(cached.LinkOnly),
 		}, true, nil
 	}
 
@@ -334,6 +337,7 @@ func loadDocument(path, relFile, name, key, relPath string, info os.FileInfo, ca
 		Excerpt:     FirstPreviewLine(content),
 		FrontMatter: ParseFrontMatter(content),
 		Links:       ParseLinks(content),
+		LinkOnly:    FindLinkOnlyLines(content),
 	}, false, nil
 }
 
