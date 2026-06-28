@@ -16,6 +16,10 @@
 
 ## Project Layout
 
-- [src/main.rs](src/main.rs) — CLI entry point, wiki loading, parsing, graph analysis, and rename logic
+- [src/main.rs](src/main.rs) — process entry point
+- [src/cli.rs](src/cli.rs) — command parsing and orchestration
+- [src/output.rs](src/output.rs) — terminal output formatting
+- [src/text.rs](src/text.rs) — line scanning and text helpers
+- [src/wiki](src/wiki) — wiki model, loading, parsing, graph analysis, and rename logic
 
 Note: `CLAUDE.md` is a symlink to `AGENTS.md`.
