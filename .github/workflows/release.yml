@@ -17,14 +17,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
+      - uses: dtolnay/rust-toolchain@stable
 
-      - uses: goreleaser/goreleaser-action@v7
+      - run: cargo build --locked --release
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/release/awiki dist/awiki
+          tar -C dist -czf "awiki-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" awiki
+
+      - uses: softprops/action-gh-release@v2
         with:
-          version: '~> v2'
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          files: awiki-${{ github.ref_name }}-linux-x86_64.tar.gz

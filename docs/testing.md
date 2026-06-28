@@ -11,27 +11,11 @@ rewrites.
 
 ## Lint
 
-The project uses [golangci-lint](https://golangci-lint.run/) with the
-configuration in `.golangci.yml`.
+The project uses `cargo clippy` for linting.
 
 ```sh
 ./scripts/lint.sh
 ```
-
-Enabled linters include:
-
-- `errcheck`
-- `govet`
-- `staticcheck`
-- `unused`
-- `ineffassign`
-- `gocritic`
-- `gocognit`
-- `bodyclose`
-- `nilerr`
-- `errorlint`
-- `unparam`
-- `unconvert`
 
 ## Pre-commit Hook
 
@@ -50,14 +34,13 @@ The pre-commit hook runs:
 ## CI
 
 GitHub Actions runs on every push to `main` and on pull requests.
-The CI workflow installs the Go version declared in `go.mod`.
 
 The CI job executes:
 
-1. `go mod verify`
-2. `go mod tidy && git diff --exit-code go.mod go.sum`
-3. `CGO_ENABLED=1 go test -race ./...`
-4. `golangci-lint run ./...`
+1. `cargo fmt --check`
+2. `cargo test --locked`
+3. `cargo clippy --locked --all-targets --all-features -- -D warnings`
+4. `cargo build --locked --release`
 
 ## Related Docs
 

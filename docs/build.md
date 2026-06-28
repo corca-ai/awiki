@@ -2,23 +2,12 @@
 
 ## Prerequisites
 
-A Go toolchain is required. The project uses [mise](https://mise.jdx.dev/) to
-manage it (`mise.toml`).
-
-`awiki` requires Go 1.25 or newer.
+Rust and Cargo are required.
 
 ```sh
-mise install
+rustup toolchain install stable
+rustup default stable
 ```
-
-If `go` is not on `PATH`, resolve it via mise:
-
-```sh
-export PATH="$(mise where go)/bin:$PATH"
-```
-
-The local helper scripts normalize `GOROOT` to match the active `go` binary, so
-an outdated exported `GOROOT` does not break builds.
 
 ## Build
 
@@ -40,7 +29,7 @@ export PATH="$HOME/bin:$PATH"
 For release builds, inject the version via `ldflags`:
 
 ```sh
-./scripts/build.sh -trimpath -ldflags="-s -w -X main.version=v0.1.0"
+AWIKI_VERSION=v0.1.0 ./scripts/build.sh
 ```
 
 To build without updating the `~/bin/awiki` symlink:

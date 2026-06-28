@@ -31,7 +31,7 @@ curl -sSfL https://raw.githubusercontent.com/corca-ai/awiki/main/install.sh | sh
 
 Other options:
 
-- `go install github.com/corca-ai/awiki/cmd/awiki@latest`
+- `cargo install --git https://github.com/corca-ai/awiki`
 - `brew install corca-ai/tap/awiki`
 - `./scripts/build.sh` for a local dev build plus `~/bin/awiki` symlink
 

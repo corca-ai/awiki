@@ -7,36 +7,33 @@ GitHub Actions defines two repository workflows:
 - `.github/workflows/ci.yml` for test and lint on pushes to `main` and pull requests
 - `.github/workflows/release.yml` for tagged releases
 
-Both workflows read the Go version from `go.mod`.
-
 ## Tagged Release Flow
 
-Pushing a `v*` tag triggers [GoReleaser](https://goreleaser.com/):
+Pushing a `v*` tag triggers the release workflow:
 
 ```sh
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-GoReleaser:
+The release workflow:
 
-- cross-compiles for macOS, Linux, and Windows
-- creates release archives and `checksums.txt`
+- builds the Rust binary in release mode
+- creates a release archive
 - publishes a GitHub Release
-- updates the Homebrew tap
 
 ## Repository Assumptions
 
 Current release configuration assumes:
 
 - GitHub repository: `corca-ai/awiki`
-- Homebrew tap: `corca-ai/homebrew-tap`
 
-If those change, update `.goreleaser.yaml` and `install.sh`.
+If that changes, update `.github/workflows/release.yml` and `install.sh`.
 
 ## Homebrew
 
-The Homebrew formula installs the `awiki` binary and verifies it with:
+If a Homebrew formula is published, it should install the `awiki` binary and
+verify it with:
 
 ```sh
 awiki version

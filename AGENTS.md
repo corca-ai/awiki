@@ -11,12 +11,11 @@
 - [Link Resolution](docs/link-resolution.md) — Obsidian-aligned link resolution rules
 - [Build & Run](docs/build.md) — local toolchain and build commands
 - [Testing](docs/testing.md) — test, lint, and hook workflow
-- [Release](docs/release.md) — CI, goreleaser, and Homebrew publishing
+- [Release](docs/release.md) — CI and tagged release publishing
 - [Architecture](docs/architecture.md) — package layout and responsibility boundaries
 
 ## Project Layout
 
-- [cmd/awiki/main.go](cmd/awiki/main.go) — CLI entry point and command dispatch
-- [internal/awiki/wiki](internal/awiki/wiki) — wiki loading, parsing, graph analysis, and rename logic
+- [src/main.rs](src/main.rs) — CLI entry point, wiki loading, parsing, graph analysis, and rename logic
 
 Note: `CLAUDE.md` is a symlink to `AGENTS.md`.

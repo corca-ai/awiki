@@ -2,34 +2,28 @@
 
 ## Overview
 
-`awiki` is intentionally small and uses the Go standard library plus a minimal
-Unicode normalization dependency.
+`awiki` is intentionally small Rust CLI code with a few focused dependencies:
+Rayon for parallel document parsing, `rustc-hash` for fast in-memory indexes,
+and Unicode normalization for stable document identity.
 
-The codebase is split into:
+The codebase is centered in:
 
-- `cmd/awiki` — CLI parsing, help text, command dispatch, and terminal output
-- `internal/awiki/wiki` — file loading, front matter parsing, link parsing, graph analysis, and rename rewriting
+- `src/main.rs` — CLI parsing, file loading, front matter parsing, link parsing,
+  graph analysis, terminal output, and rename rewriting
 
 ## Package Responsibilities
 
-### `cmd/awiki`
+### `src/main.rs`
 
-`main.go` is the command boundary.
-
-It is responsible for:
+The binary keeps side effects at the command boundary and uses plain structs for
+the wiki model. It is responsible for:
 
 - parsing flags and positional arguments
 - loading a wiki root
-- translating library results into CLI output and exit codes
-
-### `internal/awiki/wiki`
-
-This package owns the wiki model and behavior.
-
-- `vault.go` loads documents, resolves identifiers, builds the graph, and implements `lint`, `path`, and `links` queries
-- `frontmatter.go` parses supported front matter fields and updates `title` during rename
-- `links.go` parses supported link syntax in front matter and body text, and rewrites matching links during rename
-- `rename.go` coordinates file renaming and atomic file rewrites
+- parsing documents in parallel after deterministic file discovery
+- resolving identifiers and links
+- building index-based directed, inbound, and undirected graphs
+- translating results into CLI output and exit codes
 
 ## Design Choices
 
@@ -38,14 +32,15 @@ This package owns the wiki model and behavior.
 - identifier resolution is case-insensitive
 - identifier resolution normalizes Unicode so macOS and Linux filenames resolve consistently
 - graph connectivity resolves links by canonical document identity (basename when flat, repo-relative path when recursive, Obsidian-aligned); front matter `title` and `aliases` do not participate
+- document parsing is parallelized after file discovery; graph construction uses
+  document indexes instead of repeated string-key graph traversal
 - broken links are allowed and preserved
 - graph connectivity ignores unresolved links and self-links
 - rename avoids rewriting code fences, images, and external links
 
 ## Tests
 
-- `cmd/awiki/main_test.go` covers command-facing behavior
-- `internal/awiki/wiki/vault_test.go` covers parsing, graph logic, and rename behavior
+- unit tests in `src/main.rs` cover parsing, graph logic, and report behavior
 
 ## Related Docs
 

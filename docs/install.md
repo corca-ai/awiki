@@ -1,21 +1,18 @@
 # Install
 
-## Binary
+## Install Script
 
 ```sh
 curl -sSfL https://raw.githubusercontent.com/corca-ai/awiki/main/install.sh | sh
 ```
 
-The install script writes to `/usr/local/bin` when writable, otherwise to
-`~/.local/bin`.
+The install script builds the tagged release with Cargo, then writes to
+`/usr/local/bin` when writable, otherwise to `~/.local/bin`.
 
-You can also download a prebuilt archive from
-[Releases](https://github.com/corca-ai/awiki/releases/latest).
-
-## go install
+## cargo install
 
 ```sh
-go install github.com/corca-ai/awiki/cmd/awiki@latest
+cargo install --git https://github.com/corca-ai/awiki
 ```
 
 ## Homebrew

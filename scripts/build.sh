@@ -9,7 +9,8 @@ LINK_PATH="${AWIKI_LINK_PATH:-$LINK_DIR/awiki}"
 cd "$ROOT"
 mkdir -p "$(dirname "$OUTPUT")"
 
-./scripts/go-env.sh go build "$@" -o "$OUTPUT" ./cmd/awiki
+cargo build --release "$@"
+cp "$ROOT/target/release/awiki" "$OUTPUT"
 
 if [[ "${AWIKI_SKIP_LINK:-0}" == "1" ]]; then
   exit 0

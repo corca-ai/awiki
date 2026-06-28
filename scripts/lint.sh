@@ -5,7 +5,7 @@ ROOT="$(cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 if [[ $# -eq 0 ]]; then
-  exec ./scripts/go-env.sh golangci-lint run ./...
+  exec cargo clippy --all-targets --all-features -- -D warnings
 fi
 
-exec ./scripts/go-env.sh golangci-lint run "$@"
+exec cargo clippy "$@"

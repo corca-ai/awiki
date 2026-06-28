@@ -1,5 +1,6 @@
 .artifacts/
 /bin/
+/target/
 .envrc
 mise.toml
 .tmp-bin/
