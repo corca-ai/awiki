@@ -29,6 +29,7 @@ Run from a wiki directory:
 
 ```sh
 awiki lint
+awiki format
 awiki suggest
 awiki wanted
 awiki links "Graph theory"
@@ -46,6 +47,7 @@ awiki lint -root ~/wiki -recursive
 
 - `lint` — fail on mechanical quality problems such as orphans, islands, and
   context-free link-only lines
+- `format` — rewrite Markdown files with awiki's default style
 - `suggest` — print non-failing refactoring hints such as sampled long graph
   paths, missing-page pressure, long pages, short stubs, and near-duplicates
 - `wanted` — rank unresolved links by how much the wiki already points at them

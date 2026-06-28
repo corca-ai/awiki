@@ -45,6 +45,7 @@ Run from the project root while developing, or from a wiki root in normal use:
 
 ```sh
 awiki lint
+awiki format
 awiki suggest
 awiki path "Alpha" "Beta"
 awiki links "Alpha"

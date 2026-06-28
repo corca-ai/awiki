@@ -1,4 +1,5 @@
 mod analysis;
+mod format;
 mod frontmatter;
 mod links;
 mod load;

@@ -21,6 +21,7 @@ From a wiki directory:
 
 ```sh
 awiki lint
+awiki format
 awiki suggest
 awiki path "문서 A" "문서 B"
 awiki links "문서 A"
@@ -63,6 +64,7 @@ See [Install](install.md) for details.
 ## Commands
 
 - `lint` — fail on orphan documents or disconnected islands
+- `format` — rewrite Markdown files with awiki's default style
 - `suggest` — show non-failing refactoring candidates and graph-quality hints
 - `path` — print the shortest path between two documents
 - `rename` — rename a document and rewrite links to it
@@ -73,6 +75,8 @@ See [Install](install.md) for details.
 ## Choosing a Command
 
 - Use `lint` in hooks or CI when you want a pass/fail answer.
+- Use `format` when you want stable Markdown, front matter, and link style
+  without changing document meaning.
 - Use `suggest` during cleanup sessions when you want a prioritized reading
   list of pages to inspect.
 - Use `wanted` when many notes point at pages that do not exist yet.

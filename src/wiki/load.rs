@@ -257,7 +257,7 @@ fn is_markdown(path: &Path) -> bool {
 }
 
 fn is_ignored_dir(name: &str) -> bool {
-    name.starts_with('.') || name == "node_modules" || name == "vendor"
+    name.starts_with('.') || matches!(name, "node_modules" | "target" | "vendor")
 }
 
 fn load_document(path: &Path, rel_file: &str, recursive: bool) -> Result<Document, String> {

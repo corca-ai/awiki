@@ -60,6 +60,49 @@ fn wanted_ranks_missing_links() {
 }
 
 #[test]
+fn format_rewrites_markdown_safely() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("Alpha.md"),
+        "---\naliases: [ \"Beta\" , \"\", Beta, 안녕 ]\ntitle:  Hello world  \ntags: [wiki, \"graph stuff\"]\nother: value\n---\n\n#   Heading   ###\n\n\n* [[ Page | Alias ]]\n+ [ Label ]( ./hello.md )\n\n```\n* [[ No | Change ]]\n```\n",
+    )
+    .unwrap();
+
+    let vault = Vault::load(dir.path().to_str().unwrap(), Options { recursive: false }).unwrap();
+    let report = vault.format().unwrap();
+    assert_eq!(report.documents, 1);
+    assert_eq!(report.changed, vec!["Alpha"]);
+    let formatted = fs::read_to_string(dir.path().join("Alpha.md")).unwrap();
+    assert_eq!(
+        formatted,
+        "---\ntitle: Hello world\naliases:\n  - Beta\n  - 안녕\ntags:\n  - wiki\n  - graph stuff\nother: value\n---\n\n# Heading\n\n- [[Page|Alias]]\n- [Label](./hello.md)\n\n```\n* [[ No | Change ]]\n```\n"
+    );
+
+    let vault = Vault::load(dir.path().to_str().unwrap(), Options { recursive: false }).unwrap();
+    assert!(vault.format().unwrap().changed.is_empty());
+}
+
+#[test]
+fn recursive_load_ignores_generated_target_dir() {
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("target")).unwrap();
+    fs::write(dir.path().join("Visible.md"), "Visible note.\n").unwrap();
+    fs::write(
+        dir.path().join("target").join("Generated.md"),
+        "Generated note.\n",
+    )
+    .unwrap();
+
+    let vault = Vault::load(dir.path().to_str().unwrap(), Options { recursive: true }).unwrap();
+    let names: Vec<_> = vault
+        .documents
+        .iter()
+        .map(|doc| doc.name.as_str())
+        .collect();
+    assert_eq!(names, vec!["Visible"]);
+}
+
+#[test]
 fn suggest_reports_refactoring_candidates() {
     let dir = tempdir().unwrap();
     fs::write(

@@ -28,6 +28,7 @@ Command output is line-oriented and grep-friendly.
 
 - Use `lint` for automation. It exits non-zero when it finds mechanical quality
   problems.
+- Use `format` to rewrite files into awiki's default Markdown style.
 - Use `suggest` for cleanup planning. It prints candidates that should be
   reviewed by a human.
 - Use `wanted` to decide which missing pages, redirects, or spelling fixes would
@@ -82,6 +83,49 @@ awiki lint -root ~/wiki
 On success, stdout prints:
 
 - `// ok connected_graph documents=<n> largest_component_ratio=<r> orphan_rate=<r> content_coverage=<r>`
+
+### `format`
+
+Rewrites Markdown files in place using awiki's default style. It accepts the
+same `-root` and `-recursive` flags as other wiki-wide commands and has no
+formatting options.
+
+Default formatting rules:
+
+- ensures exactly one final newline
+- removes trailing whitespace outside fenced code blocks
+- collapses repeated blank lines outside fenced code blocks
+- keeps fenced code block contents unchanged
+- uses ATX headings with one space after the marker, such as `## Title`
+- keeps one blank line around headings
+- normalizes unordered list markers to `-`
+- normalizes wikilink spacing, such as `[[ Page | Alias ]]` to `[[Page|Alias]]`
+- removes empty wikilink aliases, such as `[[Page|]]` to `[[Page]]`
+- normalizes Markdown link spacing, such as `[ Text ]( ./note.md )` to
+  `[Text](./note.md)`
+- rewrites front matter with `title`, `aliases`, and `tags` first
+- writes `aliases` and `tags` as block lists, trimming empty and duplicate
+  values
+
+`format` does not infer meaning. It does not rewrite link targets to resolved
+document names, add context to link-only lines, reflow prose, split long pages,
+or merge duplicate pages.
+
+Example:
+
+```sh
+awiki format
+awiki format -root ~/wiki -recursive
+```
+
+Example output:
+
+```text
+// format documents=8042 changed=3
+Books Ive read
+Graph theory
+notes/project-plan
+```
 
 ### `path <from> <to>`
 

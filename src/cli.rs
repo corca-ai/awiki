@@ -28,6 +28,7 @@ pub(crate) fn run() {
             Ok(())
         }
         "lint" => lint_cmd(&argv),
+        "format" => format_cmd(&argv),
         "links" => links_cmd(&argv),
         "path" => path_cmd(&argv),
         "suggest" => suggest::suggest_cmd(&argv),
@@ -66,6 +67,8 @@ fn usage() {
     eprintln!("Commands:");
     eprintln!("  awiki lint [flags]");
     eprintln!("      Validate the wiki graph");
+    eprintln!("  awiki format [flags]");
+    eprintln!("      Rewrite Markdown files with awiki's default style");
     eprintln!("  awiki avg-shortest-path [flags]");
     eprintln!("      Estimate average shortest path length and print sampled long paths");
     eprintln!("  awiki path [flags] <from> <to>");
@@ -145,6 +148,36 @@ fn lint_cmd(args: &[String]) -> Result<(), String> {
         report.orphan_rate(),
         report.content_coverage()
     );
+    Ok(())
+}
+
+fn format_cmd(args: &[String]) -> Result<(), String> {
+    let parsed = match parse_common(args) {
+        Ok(p) => p,
+        Err(e) if e == "__help__" => {
+            eprintln!("Usage: awiki format [flags]");
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
+    if !parsed.rest.is_empty() {
+        return Err("format does not accept positional arguments".to_string());
+    }
+    let vault = Vault::load(
+        &parsed.root,
+        Options {
+            recursive: parsed.recursive,
+        },
+    )?;
+    let report = vault.format()?;
+    println!(
+        "// format documents={} changed={}",
+        report.documents,
+        report.changed.len()
+    );
+    for rel_path in report.changed {
+        println!("{rel_path}");
+    }
     Ok(())
 }
 

@@ -45,6 +45,7 @@ The load module owns filesystem discovery and graph construction:
 
 - `src/wiki/frontmatter.rs` parses and rewrites YAML front matter fields used by
   the tool
+- `src/wiki/format.rs` rewrites Markdown documents with awiki's default style
 - `src/wiki/links.rs` parses wiki/Markdown links and detects link-only lines
 - `src/wiki/path.rs` normalizes document names and repo-relative paths
 - `src/wiki/analysis.rs` implements lint, shortest-path, and wanted-page logic
