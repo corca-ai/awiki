@@ -112,7 +112,7 @@ impl Vault {
         ))
     }
 
-    fn largest_component_keys(&self) -> Vec<usize> {
+    pub(super) fn largest_component_keys(&self) -> Vec<usize> {
         let mut visited = vec![false; self.documents.len()];
         let mut best: Vec<usize> = Vec::new();
         for idx in 0..self.documents.len() {
@@ -250,7 +250,7 @@ impl Vault {
     }
 }
 
-fn sample_component_pairs(
+pub(super) fn sample_component_pairs(
     node_count: usize,
     sample_count: usize,
     seed: u64,
@@ -285,7 +285,7 @@ fn sample_component_pairs(
     pairs
 }
 
-fn path_sort_key(vault: &Vault, path: &[usize]) -> String {
+pub(super) fn path_sort_key(vault: &Vault, path: &[usize]) -> String {
     path.iter()
         .map(|&idx| lower(&vault.documents[idx].name))
         .collect::<Vec<_>>()

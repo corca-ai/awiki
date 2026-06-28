@@ -48,6 +48,8 @@ The load module owns filesystem discovery and graph construction:
 - `src/wiki/links.rs` parses wiki/Markdown links and detects link-only lines
 - `src/wiki/path.rs` normalizes document names and repo-relative paths
 - `src/wiki/analysis.rs` implements lint, shortest-path, and wanted-page logic
+- `src/wiki/suggest.rs` implements non-failing refactoring hints, with page
+  length and near-duplicate helpers under `src/wiki/suggest/`
 - `src/wiki/rename.rs` rewrites document links and performs the filesystem rename
 
 ## Design Choices

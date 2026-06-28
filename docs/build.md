@@ -45,6 +45,7 @@ Run from the project root while developing, or from a wiki root in normal use:
 
 ```sh
 awiki lint
+awiki suggest
 awiki path "Alpha" "Beta"
 awiki links "Alpha"
 awiki rename "Old" "New"
@@ -52,6 +53,8 @@ awiki version
 ```
 
 Each command accepts `-root <dir>` to point at a wiki directory explicitly.
+Most commands also accept `-recursive` (`-r`) when the wiki uses nested
+directories.
 
 ## Related Docs
 

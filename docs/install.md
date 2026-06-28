@@ -1,6 +1,22 @@
 # Install
 
+## Homebrew
+
+Recommended for regular users:
+
+```sh
+brew install corca-ai/tap/awiki
+```
+
+Verify the installed binary:
+
+```sh
+awiki version
+```
+
 ## Install Script
+
+Use the install script when Homebrew is not available:
 
 ```sh
 curl -sSfL https://raw.githubusercontent.com/corca-ai/awiki/main/install.sh | sh
@@ -9,16 +25,10 @@ curl -sSfL https://raw.githubusercontent.com/corca-ai/awiki/main/install.sh | sh
 The install script builds the tagged release with Cargo, then writes to
 `/usr/local/bin` when writable, otherwise to `~/.local/bin`.
 
-## cargo install
+## Cargo
 
 ```sh
 cargo install --git https://github.com/corca-ai/awiki
-```
-
-## Homebrew
-
-```sh
-brew install corca-ai/tap/awiki
 ```
 
 ## From Source
@@ -39,6 +49,7 @@ export PATH="$HOME/bin:$PATH"
 
 ```sh
 awiki version
+awiki lint -root /path/to/wiki
 ```
 
 ## Related Docs

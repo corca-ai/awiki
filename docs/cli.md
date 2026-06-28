@@ -21,6 +21,20 @@ Command output is line-oriented and grep-friendly.
 - `grep '^\[\['` extracts only document lines
 - `grep -v '^//'` drops metadata while keeping document lines
 - `wanted` uses a report layout with `[[Missing Page]] (N links)` headers and bullet source lines
+- `suggest` prints non-failing refactoring hints; it is meant to point you at
+  pages worth inspecting, not to enforce a rule
+
+## Choosing a Command
+
+- Use `lint` for automation. It exits non-zero when it finds mechanical quality
+  problems.
+- Use `suggest` for cleanup planning. It prints candidates that should be
+  reviewed by a human.
+- Use `wanted` to decide which missing pages, redirects, or spelling fixes would
+  remove the most unresolved links.
+- Use `links` to understand one page's local neighborhood.
+- Use `path` to inspect how two topics are connected through the graph.
+- Use `rename` to change a page name while preserving links.
 
 ## Commands
 
@@ -155,6 +169,55 @@ Example output:
 - [[Books Ive read]]: I should read more about [[Missing note]] soon.
 - [[Graph theory]]: Compare this with [[Missing note]].
 _ ...
+```
+
+### `suggest`
+
+Shows refactoring candidates and graph-quality hints. Unlike `lint`, this
+command exits zero when it finds candidates.
+
+Default sections:
+
+- `sampled-diameter`: samples shortest paths inside the largest connected
+  component and prints the longest sampled paths with page previews. Use these
+  paths to find remote topic clusters that may need bridge notes or extra links.
+- `wanted-pressure`: ranks missing pages by unresolved link pressure and prints
+  source context. These are good candidates for new hub pages, redirects, or
+  corrected links.
+- `long-pages`: lists pages above the line or word threshold. These are split,
+  outline, or summary-link candidates.
+- `short-stubs`: lists very short non-empty pages. These are merge, expand, or
+  delete candidates.
+- `near-duplicates`: finds likely duplicate pages using normalized Markdown
+  text fingerprints, winnowed candidates, and n-gram similarity scores. Review
+  the listed page pair before merging.
+
+The command intentionally prints the concrete documents to inspect. For long
+paths, read the endpoints and the middle bridge pages. For wanted pressure, read
+the source lines before creating a page. For near-duplicates, compare both page
+previews and merge only when the pages really carry the same concept.
+
+Filters are comma-separated:
+
+```sh
+awiki suggest
+awiki suggest --filter=sampled-diameter,wanted-pressure
+awiki suggest --filter near-duplicates --duplicate-threshold 0.9
+awiki suggest -n 20 --long-lines 160 --short-words 30
+```
+
+Common output shape:
+
+```text
+// suggest documents=8042 filters=sampled-diameter,wanted-pressure
+// sampled_diameter samples=2000 sampled_diameter=9 paths=5
+// path distance=9
+[[Source page]]: First visible line.
+[[Bridge page]]: First visible line.
+[[Target page]]: First visible line.
+// wanted_pressure pages=10
+[[Missing note]] mentions=5 source_documents=3
+- [[Referencing page]]: Local line that mentions [[Missing note]].
 ```
 
 ### `avg-shortest-path`

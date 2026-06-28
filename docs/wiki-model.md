@@ -95,6 +95,9 @@ gardening workflow and for ranking missing pages with `wanted`.
 - `path` uses the same undirected graph
 - `links` shows resolved links first, then missing outbound links
 - `wanted` ranks unresolved links by missing target page
+- `suggest` uses graph samples, unresolved-link pressure, page length, and
+  near-duplicate text fingerprints to point at refactoring candidates without
+  failing the command
 
 ## Rename Rules
 

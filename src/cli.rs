@@ -5,6 +5,8 @@ use crate::{
     wiki::{Options, Vault},
 };
 
+mod suggest;
+
 const WANTED_SOURCE_PREVIEW_LIMIT: usize = 10;
 
 struct Args {
@@ -28,6 +30,7 @@ pub(crate) fn run() {
         "lint" => lint_cmd(&argv),
         "links" => links_cmd(&argv),
         "path" => path_cmd(&argv),
+        "suggest" => suggest::suggest_cmd(&argv),
         "wanted" => wanted_cmd(&argv),
         "avg-shortest-path" => avg_shortest_path_cmd(&argv),
         "rename" => rename_cmd(&argv),
@@ -71,6 +74,8 @@ fn usage() {
     eprintln!("      Rename a document and update links to it");
     eprintln!("  awiki links [flags] <document>");
     eprintln!("      Show inbound and outbound links for a document");
+    eprintln!("  awiki suggest [flags]");
+    eprintln!("      Show refactoring candidates and graph-quality hints");
     eprintln!("  awiki wanted [flags]");
     eprintln!("      Show the most-linked missing pages");
     eprintln!();
