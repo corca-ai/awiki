@@ -25,7 +25,7 @@ impl Vault {
             for issue in &doc.link_only {
                 report.link_only_lines.push((idx, issue.clone()));
             }
-            if self.undirected[idx].is_empty() {
+            if self.neighbors[idx].is_empty() {
                 report.orphans.push(idx);
                 visited[idx] = true;
                 continue;
@@ -65,9 +65,7 @@ impl Vault {
         let mut component = Vec::new();
         while let Some(cur) = q.pop_front() {
             component.push(cur);
-            let mut neighbors: Vec<_> = self.undirected[cur].iter().copied().collect();
-            self.sort_doc_indices(&mut neighbors);
-            for next in neighbors {
+            for &next in &self.neighbors[cur] {
                 if !visited[next] {
                     visited[next] = true;
                     q.push_back(next);
@@ -89,9 +87,7 @@ impl Vault {
         let mut q = VecDeque::from([from]);
         prev[from] = from;
         while let Some(cur) = q.pop_front() {
-            let mut neighbors: Vec<_> = self.undirected[cur].iter().copied().collect();
-            self.sort_doc_indices(&mut neighbors);
-            for next in neighbors {
+            for &next in &self.neighbors[cur] {
                 if prev[next] != usize::MAX {
                     continue;
                 }
@@ -123,7 +119,7 @@ impl Vault {
             if visited[idx] {
                 continue;
             }
-            if self.undirected[idx].is_empty() {
+            if self.neighbors[idx].is_empty() {
                 visited[idx] = true;
                 continue;
             }

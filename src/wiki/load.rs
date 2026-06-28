@@ -10,7 +10,7 @@ use crate::{
     text::lower,
     wiki::{
         frontmatter::{first_preview_line, parse_front_matter},
-        links::{find_link_only_lines, parse_links},
+        links::parse_document_links,
         path::{
             clean_rel_path, dir_segment, document_key, document_path_key, last_segment,
             resolve_target_rel, trim_md_ext,
@@ -49,10 +49,12 @@ impl Vault {
             directed: (0..n).map(|_| FxHashSet::default()).collect(),
             inbound: (0..n).map(|_| FxHashSet::default()).collect(),
             undirected: (0..n).map(|_| FxHashSet::default()).collect(),
+            neighbors: vec![Vec::new(); n],
         };
         vault.build_identifiers();
         vault.build_basenames();
         vault.build_graph();
+        vault.build_neighbors();
         Ok(vault)
     }
 
@@ -115,6 +117,18 @@ impl Vault {
                 }
             }
         }
+    }
+
+    fn build_neighbors(&mut self) {
+        self.neighbors = self
+            .undirected
+            .iter()
+            .map(|set| {
+                let mut docs: Vec<_> = set.iter().copied().collect();
+                self.sort_doc_indices(&mut docs);
+                docs
+            })
+            .collect();
     }
 
     fn resolve_link_target(
@@ -203,14 +217,15 @@ fn discover_files(root: &Path, recursive: bool) -> Result<Vec<(PathBuf, String)>
         while let Some(dir) = stack.pop() {
             for entry in fs::read_dir(&dir).map_err(|e| e.to_string())? {
                 let entry = entry.map_err(|e| e.to_string())?;
+                let file_type = entry.file_type().map_err(|e| e.to_string())?;
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
-                if path.is_dir() {
+                if file_type.is_dir() {
                     if path != root && is_ignored_dir(&name) {
                         continue;
                     }
                     stack.push(path);
-                } else if is_markdown(&path) {
+                } else if file_type.is_file() && is_markdown(&path) {
                     let rel = path
                         .strip_prefix(root)
                         .unwrap()
@@ -225,8 +240,9 @@ fn discover_files(root: &Path, recursive: bool) -> Result<Vec<(PathBuf, String)>
         let mut out = Vec::new();
         for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
+            let file_type = entry.file_type().map_err(|e| e.to_string())?;
             let path = entry.path();
-            if path.is_file() && is_markdown(&path) {
+            if file_type.is_file() && is_markdown(&path) {
                 let rel = entry.file_name().to_string_lossy().to_string();
                 out.push((path, rel));
             }
@@ -257,14 +273,16 @@ fn load_document(path: &Path, rel_file: &str, recursive: bool) -> Result<Documen
     } else {
         document_key(&rel_path)
     };
+    let front_matter = parse_front_matter(&content);
+    let (links, link_only) = parse_document_links(&content, &front_matter);
     Ok(Document {
         name,
         key,
         path: path.to_path_buf(),
         rel_path,
-        excerpt: first_preview_line(&content),
-        front_matter: parse_front_matter(&content),
-        links: parse_links(&content),
-        link_only: find_link_only_lines(&content),
+        excerpt: first_preview_line(&content, &front_matter),
+        links,
+        link_only,
+        front_matter,
     })
 }

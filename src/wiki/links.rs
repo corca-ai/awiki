@@ -1,18 +1,18 @@
-use super::{Link, LinkKind, LinkOnlyLine};
+use super::{FrontMatter, Link, LinkKind, LinkOnlyLine};
 use crate::{
     text::{
         contains_letter_or_digit, fence_start, find_byte, find_bytes, mask_inline_code,
         next_fence_state, normalize_preview_line, scan_lines, strip_line_only_markdown, trim_line,
     },
-    wiki::{
-        frontmatter::parse_front_matter,
-        path::{document_key, normalize_document_name},
-    },
+    wiki::path::{document_key, normalize_document_name},
 };
 
-pub(crate) fn parse_links(content: &str) -> Vec<Link> {
-    let fm = parse_front_matter(content);
+pub(crate) fn parse_document_links(
+    content: &str,
+    fm: &FrontMatter,
+) -> (Vec<Link>, Vec<LinkOnlyLine>) {
     let mut links = Vec::new();
+    let mut link_only = Vec::new();
     if fm.present {
         for (line, _, _) in scan_lines(&content[..fm.body_offset]) {
             let context = normalize_preview_line(trim_line(line));
@@ -26,7 +26,14 @@ pub(crate) fn parse_links(content: &str) -> Vec<Link> {
     let mut in_fence = false;
     let mut fence_marker = '\0';
     let mut fence_width = 0usize;
-    for (line, _, _) in scan_lines(&content[fm.body_offset..]) {
+    let body_start_line = content[..fm.body_offset]
+        .bytes()
+        .filter(|&b| b == b'\n')
+        .count();
+    for (line_idx, (line, _, _)) in scan_lines(&content[fm.body_offset..])
+        .into_iter()
+        .enumerate()
+    {
         let trimmed = trim_line(line).trim();
         if let Some((marker, width)) = fence_start(trimmed) {
             (in_fence, fence_marker, fence_width) =
@@ -41,9 +48,15 @@ pub(crate) fn parse_links(content: &str) -> Vec<Link> {
         for link in &mut parsed {
             link.context = context.clone();
         }
+        if parsed.len() == 1 && is_link_only_line(trimmed) {
+            link_only.push(LinkOnlyLine {
+                line: body_start_line + line_idx + 1,
+                text: trimmed.to_string(),
+            });
+        }
         links.extend(parsed);
     }
-    links
+    (links, link_only)
 }
 
 fn parse_links_in_line(line: &str) -> Vec<Link> {
@@ -125,35 +138,6 @@ fn parse_markdown_links(line: &str) -> Vec<Link> {
         i += 1;
     }
     out
-}
-
-pub(crate) fn find_link_only_lines(content: &str) -> Vec<LinkOnlyLine> {
-    let fm = parse_front_matter(content);
-    let mut issues = Vec::new();
-    let mut in_fence = false;
-    let mut fence_marker = '\0';
-    let mut fence_width = 0usize;
-    for (line_no, (line, _, end)) in scan_lines(content).into_iter().enumerate() {
-        if end <= fm.body_offset {
-            continue;
-        }
-        let trimmed = trim_line(line).trim();
-        if let Some((marker, width)) = fence_start(trimmed) {
-            (in_fence, fence_marker, fence_width) =
-                next_fence_state(in_fence, fence_marker, fence_width, marker, width);
-            continue;
-        }
-        if in_fence || trimmed.is_empty() {
-            continue;
-        }
-        if is_link_only_line(trimmed) {
-            issues.push(LinkOnlyLine {
-                line: line_no + 1,
-                text: trimmed.to_string(),
-            });
-        }
-    }
-    issues
 }
 
 fn is_link_only_line(line: &str) -> bool {

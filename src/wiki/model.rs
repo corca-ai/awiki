@@ -55,6 +55,7 @@ pub(crate) struct Vault {
     pub(crate) directed: Vec<FxHashSet<usize>>,
     pub(crate) inbound: Vec<FxHashSet<usize>>,
     pub(crate) undirected: Vec<FxHashSet<usize>>,
+    pub(crate) neighbors: Vec<Vec<usize>>,
 }
 
 #[derive(Clone, Copy)]

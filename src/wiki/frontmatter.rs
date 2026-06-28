@@ -108,8 +108,7 @@ fn parse_inline_list(value: &str) -> Vec<String> {
     items
 }
 
-pub(crate) fn first_preview_line(content: &str) -> String {
-    let fm = parse_front_matter(content);
+pub(crate) fn first_preview_line(content: &str, fm: &FrontMatter) -> String {
     let mut in_fence = false;
     let mut fence_marker = '\0';
     let mut fence_width = 0usize;
