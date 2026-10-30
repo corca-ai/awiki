@@ -111,7 +111,9 @@ gardening workflow and for ranking missing pages with `wanted`.
 In a recursive vault, `rename` also accepts a repo-relative path target, keeps
 the document in its directory (or moves it across directories, creating parents
 as needed), recomputes relative link text (`../`) from each referencing
-document, and rewrites only links that resolve to the renamed document.
+document, and rewrites only links that resolve to the renamed document. A bare
+wikilink stays bare when the new name still resolves to the renamed document;
+otherwise it becomes the repo-relative path.
 
 `rename` does not rewrite:
 

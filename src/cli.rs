@@ -121,14 +121,21 @@ fn parse_common(args: &[String]) -> Result<Args, String> {
     Ok(parsed)
 }
 
-fn lint_cmd(args: &[String]) -> Result<(), String> {
-    let parsed = match parse_common(args) {
-        Ok(p) => p,
+/// Parses the common flags, or prints `usage` for `-h` and returns `None`.
+fn parse_common_or_help(args: &[String], usage: &str) -> Result<Option<Args>, String> {
+    match parse_common(args) {
+        Ok(parsed) => Ok(Some(parsed)),
         Err(e) if e == "__help__" => {
-            eprintln!("Usage: awiki lint [flags]");
-            return Ok(());
+            eprintln!("{usage}");
+            Ok(None)
         }
-        Err(e) => return Err(e),
+        Err(e) => Err(e),
+    }
+}
+
+fn lint_cmd(args: &[String]) -> Result<(), String> {
+    let Some(parsed) = parse_common_or_help(args, "Usage: awiki lint [flags]")? else {
+        return Ok(());
     };
     let vault = Vault::load(
         &parsed.root,
@@ -152,13 +159,8 @@ fn lint_cmd(args: &[String]) -> Result<(), String> {
 }
 
 fn format_cmd(args: &[String]) -> Result<(), String> {
-    let parsed = match parse_common(args) {
-        Ok(p) => p,
-        Err(e) if e == "__help__" => {
-            eprintln!("Usage: awiki format [flags]");
-            return Ok(());
-        }
-        Err(e) => return Err(e),
+    let Some(parsed) = parse_common_or_help(args, "Usage: awiki format [flags]")? else {
+        return Ok(());
     };
     if !parsed.rest.is_empty() {
         return Err("format does not accept positional arguments".to_string());
@@ -182,7 +184,9 @@ fn format_cmd(args: &[String]) -> Result<(), String> {
 }
 
 fn links_cmd(args: &[String]) -> Result<(), String> {
-    let parsed = parse_common(args)?;
+    let Some(parsed) = parse_common_or_help(args, "Usage: awiki links [flags] <document>")? else {
+        return Ok(());
+    };
     if parsed.rest.len() != 1 {
         return Err("links requires exactly one document argument".to_string());
     }
@@ -222,7 +226,9 @@ fn links_cmd(args: &[String]) -> Result<(), String> {
 }
 
 fn path_cmd(args: &[String]) -> Result<(), String> {
-    let parsed = parse_common(args)?;
+    let Some(parsed) = parse_common_or_help(args, "Usage: awiki path [flags] <from> <to>")? else {
+        return Ok(());
+    };
     if parsed.rest.len() != 2 {
         return Err("path requires exactly two document arguments".to_string());
     }
@@ -269,7 +275,9 @@ fn wanted_cmd(args: &[String]) -> Result<(), String> {
         }
         i += 1;
     }
-    let parsed = parse_common(&common)?;
+    let Some(parsed) = parse_common_or_help(&common, "Usage: awiki wanted [flags]")? else {
+        return Ok(());
+    };
     if !parsed.rest.is_empty() {
         return Err("wanted does not accept positional arguments".to_string());
     }
@@ -345,7 +353,10 @@ fn avg_shortest_path_cmd(args: &[String]) -> Result<(), String> {
         }
         i += 1;
     }
-    let parsed = parse_common(&common)?;
+    let Some(parsed) = parse_common_or_help(&common, "Usage: awiki avg-shortest-path [flags]")?
+    else {
+        return Ok(());
+    };
     let vault = Vault::load(
         &parsed.root,
         Options {
@@ -369,7 +380,10 @@ fn avg_shortest_path_cmd(args: &[String]) -> Result<(), String> {
 }
 
 fn rename_cmd(args: &[String]) -> Result<(), String> {
-    let parsed = parse_common(args)?;
+    let Some(parsed) = parse_common_or_help(args, "Usage: awiki rename [flags] <old> <new>")?
+    else {
+        return Ok(());
+    };
     if parsed.rest.len() != 2 {
         return Err("rename requires exactly two document arguments".to_string());
     }
@@ -389,4 +403,21 @@ fn rename_cmd(args: &[String]) -> Result<(), String> {
         result.links_updated, result.files_touched, result.title_updated
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_common_or_help;
+
+    #[test]
+    fn help_flag_prints_usage_instead_of_failing() {
+        let args = vec!["-h".to_string()];
+        assert!(
+            parse_common_or_help(&args, "Usage: awiki links [flags] <document>")
+                .unwrap()
+                .is_none()
+        );
+        let args = vec!["-x".to_string()];
+        assert!(parse_common_or_help(&args, "usage").is_err());
+    }
 }

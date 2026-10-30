@@ -144,7 +144,7 @@ impl Vault {
         self.resolve_recursive(source_dir, link.kind, &link.raw_target, &link.target_key)
     }
 
-    fn resolve_recursive(
+    pub(super) fn resolve_recursive(
         &self,
         source_dir: &str,
         kind: LinkKind,
