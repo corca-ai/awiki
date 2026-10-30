@@ -69,6 +69,7 @@ See [Install](install.md) for details.
 - `path` — print the shortest path between two documents
 - `rename` — rename a document and rewrite links to it
 - `links` — show inbound and outbound links for a document
+- `graph` — print link counts for every document, or every link, as text or JSON
 - `wanted` — rank the most-linked missing pages with source context
 - `version` — print the build version
 
@@ -81,6 +82,7 @@ See [Install](install.md) for details.
   list of pages to inspect.
 - Use `wanted` when many notes point at pages that do not exist yet.
 - Use `links` when a single page feels misplaced or under-connected.
+- Use `graph` to audit the whole wiki in one run, for example pages nothing links to.
 - Use `path` when two ideas should be related but the current route is unclear.
 - Use `rename` when a page name changes and existing links need to keep working.
 

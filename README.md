@@ -52,6 +52,7 @@ awiki lint -root ~/wiki -recursive
   paths, missing-page pressure, long pages, short stubs, and near-duplicates
 - `wanted` — rank unresolved links by how much the wiki already points at them
 - `links` — inspect inbound, outbound, and missing links for one document
+- `graph` — print link counts for every document, every link, or both as JSON
 - `path` — print the shortest path between two documents
 - `rename` — rename a document and rewrite links that point to it
 

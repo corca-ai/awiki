@@ -4,7 +4,10 @@ use tempfile::tempdir;
 
 use crate::output::format_lint_report;
 
-use super::{format_suggest_report, Options, SuggestFilter, SuggestOptions, Vault};
+use super::{
+    format_graph_edges, format_graph_json, format_graph_nodes, format_suggest_report, Options,
+    SuggestFilter, SuggestOptions, Vault,
+};
 
 #[test]
 fn lint_finds_link_only_lines_but_allows_two_links() {
@@ -246,4 +249,32 @@ fn recursive_rename_qualifies_a_bare_link_another_page_would_win() {
         fs::read_to_string(dir.path().join("index.md")).unwrap(),
         "[[deep/taken]] and [o](deep/taken.md)\n"
     );
+}
+
+#[test]
+fn graph_reports_counts_edges_and_json() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("Alpha.md"),
+        "[[Beta]] twice [[Beta#x]], [[Alpha]] itself, [[Gone]] and [[gone|g]] and [[Other \"q\"]].\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("Beta.md"), "Back to [[Alpha]].\n").unwrap();
+    fs::write(dir.path().join("Lonely.md"), "Nobody links here.\n").unwrap();
+
+    let vault = Vault::load(dir.path().to_str().unwrap(), Options { recursive: false }).unwrap();
+    assert_eq!(
+        format_graph_nodes(&vault),
+        "[[Alpha]] inbound=1 outbound=1 missing=2\n[[Beta]] inbound=1 outbound=1 missing=0\n[[Lonely]] inbound=0 outbound=0 missing=0"
+    );
+    assert_eq!(
+        format_graph_edges(&vault),
+        "[[Alpha]] -> [[Beta]]\n[[Alpha]] -> [[Gone]] (missing)\n[[Alpha]] -> [[Other \"q\"]] (missing)\n[[Beta]] -> [[Alpha]]"
+    );
+    let json = format_graph_json(&vault);
+    assert!(json.starts_with(
+        "{\"documents\":[{\"name\":\"Alpha\",\"path\":\"Alpha.md\",\"inbound\":1,\"outbound\":1,\"missing\":2},"
+    ));
+    assert!(json.contains("{\"source\":\"Alpha\",\"target\":\"Other \\\"q\\\"\",\"missing\":true}"));
+    assert!(json.ends_with("{\"source\":\"Beta\",\"target\":\"Alpha\",\"missing\":false}]}"));
 }
