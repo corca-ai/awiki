@@ -165,3 +165,85 @@ fn suggest_reports_refactoring_candidates() {
     assert!(output.contains("// fix: create the page, correct misspelled links"));
     assert!(output.contains("// example: split \"Machine learning\""));
 }
+
+#[test]
+fn rename_rewrites_markdown_targets_in_place_and_skips_images() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("Old Page.md"),
+        "---\ntitle: Old Page\n---\nBody.\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("Linker.md"),
+        "[a](<Old Page.md#S>) [b](  <Old Page.md>) ![img](<Old Page.md>) `[[Old Page]]` [[Old Page|x]]\n",
+    )
+    .unwrap();
+
+    let mut vault =
+        Vault::load(dir.path().to_str().unwrap(), Options { recursive: false }).unwrap();
+    let result = vault.rename("Old Page", "New Page").unwrap();
+    assert_eq!((result.links_updated, result.files_touched), (3, 2));
+    assert!(result.title_updated);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("Linker.md")).unwrap(),
+        "[a](<New Page.md#S>) [b](  <New Page.md>) ![img](<Old Page.md>) `[[Old Page]]` [[New Page|x]]\n"
+    );
+}
+
+#[test]
+fn recursive_rename_rewrites_only_links_that_resolve_to_the_document() {
+    let dir = tempdir().unwrap();
+    for sub in ["a", "b", "c"] {
+        fs::create_dir(dir.path().join(sub)).unwrap();
+    }
+    fs::write(
+        dir.path().join("a/note.md"),
+        "---\ntitle: note\n---\nSelf [[note]].\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("b/note.md"), "Unrelated note.\n").unwrap();
+    fs::write(
+        dir.path().join("c/x.md"),
+        "[[b/note]] [[a/note]] [[note]] [[../a/note#S|s]] [up](../a/note.md) [other](../b/note.md)\n",
+    )
+    .unwrap();
+
+    let mut vault = Vault::load(dir.path().to_str().unwrap(), Options { recursive: true }).unwrap();
+    let result = vault.rename("a/note", "d/moved").unwrap();
+    assert_eq!(result.new_name, "d/moved");
+    assert_eq!((result.links_updated, result.files_touched), (5, 2));
+    assert!(result.title_updated);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("c/x.md")).unwrap(),
+        "[[b/note]] [[d/moved]] [[moved]] [[../d/moved#S|s]] [up](../d/moved.md) [other](../b/note.md)\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("d/moved.md")).unwrap(),
+        "---\ntitle: moved\n---\nSelf [[moved]].\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("b/note.md")).unwrap(),
+        "Unrelated note.\n"
+    );
+}
+
+#[test]
+fn recursive_rename_qualifies_a_bare_link_another_page_would_win() {
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join("deep")).unwrap();
+    fs::write(dir.path().join("deep/old.md"), "Old.\n").unwrap();
+    fs::write(dir.path().join("taken.md"), "Already at the root.\n").unwrap();
+    fs::write(
+        dir.path().join("index.md"),
+        "[[old]] and [o](deep/old.md)\n",
+    )
+    .unwrap();
+
+    let mut vault = Vault::load(dir.path().to_str().unwrap(), Options { recursive: true }).unwrap();
+    vault.rename("deep/old", "taken").unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("index.md")).unwrap(),
+        "[[deep/taken]] and [o](deep/taken.md)\n"
+    );
+}
