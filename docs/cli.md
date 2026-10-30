@@ -34,6 +34,8 @@ Command output is line-oriented and grep-friendly.
 - Use `wanted` to decide which missing pages, redirects, or spelling fixes would
   remove the most unresolved links.
 - Use `links` to understand one page's local neighborhood.
+- Use `graph` to answer whole-wiki link questions in one run, such as which
+  pages nothing links to or which pages are linked most.
 - Use `path` to inspect how two topics are connected through the graph.
 - Use `rename` to change a page name while preserving links.
 
@@ -163,6 +165,38 @@ Example:
 
 ```sh
 awiki rename "Old Title" "New Title"
+```
+
+### `graph`
+
+Prints the link graph of the whole wiki in one run.
+
+- by default, one line per document in name order:
+  `[[Page Name]] inbound=<n> outbound=<n> missing=<n>`
+  - `inbound`: distinct other documents linking to it
+  - `outbound`: distinct other documents it links to
+  - `missing`: distinct missing pages it links to
+- `-edges` prints one line per distinct link instead, as
+  `[[Source]] -> [[Target]]`; links to missing pages follow each source's
+  resolved links as `[[Source]] -> [[Missing Page]] (missing)`
+- `-json` prints both as one object:
+  `{"documents":[{"name","path","inbound","outbound","missing"}],"edges":[{"source","target","missing"}]}`
+- self-links are not counted, as in the rest of the graph rules
+- prints `_ none` when the wiki has no documents (or no links, with `-edges`)
+
+Example:
+
+```sh
+awiki graph | grep ' inbound=0 '
+awiki graph -edges | grep -c '(missing)$'
+awiki graph -json | jq -r '.documents | sort_by(-.inbound) | .[:10][] | "\(.name): \(.inbound)"'
+```
+
+Example output:
+
+```text
+[[Graph theory]] inbound=4 outbound=3 missing=1
+[[Lonely note]] inbound=0 outbound=0 missing=0
 ```
 
 ### `links <document>`

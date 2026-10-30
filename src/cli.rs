@@ -2,7 +2,7 @@ use std::{env, process};
 
 use crate::{
     output::format_lint_report,
-    wiki::{Options, Vault},
+    wiki::{format_graph_edges, format_graph_json, format_graph_nodes, Options, Vault},
 };
 
 mod suggest;
@@ -30,6 +30,7 @@ pub(crate) fn run() {
         "lint" => lint_cmd(&argv),
         "format" => format_cmd(&argv),
         "links" => links_cmd(&argv),
+        "graph" => graph_cmd(&argv),
         "path" => path_cmd(&argv),
         "suggest" => suggest::suggest_cmd(&argv),
         "wanted" => wanted_cmd(&argv),
@@ -77,6 +78,8 @@ fn usage() {
     eprintln!("      Rename a document and update links to it");
     eprintln!("  awiki links [flags] <document>");
     eprintln!("      Show inbound and outbound links for a document");
+    eprintln!("  awiki graph [flags] [-edges] [-json]");
+    eprintln!("      Print link counts for every document, or every link");
     eprintln!("  awiki suggest [flags]");
     eprintln!("      Show refactoring candidates and graph-quality hints");
     eprintln!("  awiki wanted [flags]");
@@ -222,6 +225,42 @@ fn links_cmd(args: &[String]) -> Result<(), String> {
             }
         }
     }
+    Ok(())
+}
+
+fn graph_cmd(args: &[String]) -> Result<(), String> {
+    let mut common = Vec::new();
+    let mut edges = false;
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "-edges" | "--edges" => edges = true,
+            "-json" | "--json" => json = true,
+            other => common.push(other.to_string()),
+        }
+    }
+    let Some(parsed) =
+        parse_common_or_help(&common, "Usage: awiki graph [flags] [-edges] [-json]")?
+    else {
+        return Ok(());
+    };
+    if !parsed.rest.is_empty() {
+        return Err("graph does not accept positional arguments".to_string());
+    }
+    let vault = Vault::load(
+        &parsed.root,
+        Options {
+            recursive: parsed.recursive,
+        },
+    )?;
+    let output = if json {
+        format_graph_json(&vault)
+    } else if edges {
+        format_graph_edges(&vault)
+    } else {
+        format_graph_nodes(&vault)
+    };
+    println!("{output}");
     Ok(())
 }
 
