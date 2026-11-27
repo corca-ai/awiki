@@ -1,4 +1,4 @@
-awiki releases run repository quality gates, package binaries for macOS and Linux, and publish GitHub assets, installers, checksums, and a Homebrew formula from a version tag.
+awiki releases run repository quality gates, package binaries for macOS, Linux, and Windows, and publish GitHub assets, installers, checksums, and a Homebrew formula from a version tag.
 
 ## Preparation
 
@@ -11,7 +11,7 @@ version before pushing it.
 
 The [release workflow](../.github/workflows/release.yml) runs for version tags.
 It checks the repository, builds Apple Silicon/Intel macOS and ARM64/x86-64
-Linux archives, creates installers and checksums, publishes a GitHub Release,
+Linux archives and an x86-64 Windows archive, creates installers and checksums, publishes a GitHub Release,
 and updates `corca-ai/homebrew-tap`.
 
 For example, after setting the package version to `0.8.0`:

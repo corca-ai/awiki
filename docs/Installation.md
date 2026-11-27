@@ -1,4 +1,9 @@
-awiki can be installed through Homebrew, a Cargo-based install script, or Cargo directly; local source builds use the repository's pinned Rust toolchain.
+awiki can be installed from a release archive, through Homebrew, a Cargo-based install script, or Cargo directly; local source builds use the repository's pinned Rust toolchain.
+
+## Release archive
+
+Download the archive for your platform from [GitHub Releases](https://github.com/corca-ai/awiki/releases), extract it, and put the executable on your `PATH`.
+The Windows archive targets x86-64 and contains `awiki.exe`.
 
 ## Homebrew
 

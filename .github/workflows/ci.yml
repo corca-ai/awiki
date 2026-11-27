@@ -10,6 +10,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  windows:
+    name: Windows release build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: cargo build --locked --release
+      - run: target/release/awiki.exe version
+
   test:
     name: build · test · lint
     runs-on: ubuntu-latest
