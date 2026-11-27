@@ -14,7 +14,7 @@ current executable as described in [Build and run](<Build and run.md>) before
 using it to check documentation.
 
 The docs directory shares the root [policy](../awiki.toml), which enables all
-six rules without exclusions. `awiki lint docs/` validates the flat docs wiki;
+six original rules without exclusions. `awiki lint docs/` validates the flat docs wiki;
 `awiki lint -recursive` also checks root documents. See
 [Lint configuration](<Lint configuration.md>) for rule semantics and
 [Documentation guide](<Documentation guide.md>) for writing rules.

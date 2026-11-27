@@ -7,6 +7,7 @@ use diagnostic::{Diagnostic, Diagnostics, Severity};
 use policy::{CompiledPolicy, Config, Policy};
 use std::fs;
 mod diagnostic;
+mod local;
 mod policy;
 
 impl Vault {
@@ -68,6 +69,7 @@ impl Vault {
             emit(idx, issue.line, 1, "link-only-line", issue.text);
         }
         let mut sources = SourceCache::default();
+        let mut resources = local::ResourceChecker::default();
         for (idx, doc) in self.documents.iter().enumerate() {
             let path = doc
                 .path
@@ -76,6 +78,18 @@ impl Vault {
                 .to_string_lossy()
                 .replace('\\', "/");
             let parsed = &doc.markdown;
+            if policy.severity(&path, "broken-reference-link") != Severity::Off {
+                for reference in &parsed.broken_references {
+                    let (line, column) = position(&doc.content, reference.span.start);
+                    emit(
+                        idx,
+                        line,
+                        column,
+                        "broken-reference-link",
+                        format!("undefined reference: {}", reference.label),
+                    );
+                }
+            }
             if policy.severity(&path, "first-block-paragraph") != Severity::Off
                 && !parsed.first_paragraph
             {
@@ -90,13 +104,52 @@ impl Vault {
             }
             if policy.severity(&path, "broken-document-link") != Severity::Off {
                 for link in &doc.links {
-                    if link.resolved.is_none() {
+                    let local_severity = policy.severity(&path, "broken-local-link");
+                    let covered = link.kind == super::LinkKind::Markdown
+                        && at_least(
+                            local_severity,
+                            policy.severity(&path, "broken-document-link"),
+                        )
+                        && parsed.local_resources.iter().any(|resource| {
+                            resource.code_checked
+                                && position(&doc.content, resource.span.start)
+                                    == (link.line, link.column)
+                        });
+                    if link.resolved.is_none() && !covered {
                         emit(
                             idx,
                             link.line,
                             link.column,
                             "broken-document-link",
                             format!("unresolved document: {}", link.display_target),
+                        );
+                    }
+                }
+            }
+            if policy.severity(&path, "broken-local-link") != Severity::Off {
+                for resource in &parsed.local_resources {
+                    let (file, fragment) = split_target_suffix(&resource.target);
+                    let file = file.split('?').next().unwrap_or("");
+                    let code_target = resource.code_checked
+                        && !fragment.is_empty()
+                        && local::is_source(std::path::Path::new(file));
+                    if code_target
+                        && at_least(
+                            policy.severity(&path, "broken-code-reference"),
+                            policy.severity(&path, "broken-local-link"),
+                        )
+                    {
+                        continue;
+                    }
+                    let target = if code_target { file } else { &resource.target };
+                    if let Err(message) = resources.check(&doc.path, target) {
+                        let (line, column) = position(&doc.content, resource.span.start);
+                        emit(
+                            idx,
+                            line,
+                            column,
+                            "broken-local-link",
+                            format!("{}: {message}", resource.target),
                         );
                     }
                 }
@@ -114,7 +167,15 @@ impl Vault {
                     continue;
                 }
                 let (file, fragment) = split_target_suffix(&link.target);
+                let file = file.split('?').next().unwrap_or("");
                 if fragment.is_empty() || is_document(file) {
+                    continue;
+                }
+                if at_least(
+                    policy.severity(&path, "broken-local-link"),
+                    policy.severity(&path, "broken-code-reference"),
+                ) && local::is_markup(std::path::Path::new(file))
+                {
                     continue;
                 }
                 let target = doc.path.parent().expect("document parent").join(file);
@@ -133,6 +194,9 @@ impl Vault {
         result.sort();
         Ok(result)
     }
+}
+fn at_least(candidate: Severity, required: Severity) -> bool {
+    candidate != Severity::Off && (candidate == Severity::Error || candidate == required)
 }
 fn position(content: &str, offset: usize) -> (usize, usize) {
     let prefix = &content[..offset];

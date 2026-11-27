@@ -6,22 +6,34 @@ use crate::{
 
 pub(super) fn lint_cmd(args: &[String]) -> Result<(), String> {
     let json = args.iter().any(|arg| arg == "-json" || arg == "--json");
-    let common = args
-        .iter()
-        .filter(|arg| arg.as_str() != "-json" && arg.as_str() != "--json")
-        .cloned()
-        .collect::<Vec<_>>();
-    let Some(parsed) =
-        parse_common_or_help(&common, "Usage: awiki lint [flags] [directory] [-json]")?
+    let mut common = Vec::new();
+    let mut includes = Vec::new();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "-json" | "--json" => {}
+            "-include" | "--include" => includes.push(
+                iter.next()
+                    .ok_or("flag needs an argument: -include")?
+                    .clone(),
+            ),
+            _ => common.push(arg.clone()),
+        }
+    }
+    let Some(parsed) = parse_common_or_help(
+        &common,
+        "Usage: awiki lint [flags] [directory] [-json] [-include glob]",
+    )?
     else {
         return Ok(());
     };
     let parsed = select_root(parsed, args)?;
-    let vault = Vault::load(
+    let vault = Vault::load_selected(
         &parsed.root,
         Options {
             recursive: parsed.recursive,
         },
+        &includes,
     )?;
     let configured = vault.configured_lint()?;
     if json {

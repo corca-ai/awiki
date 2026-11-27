@@ -12,14 +12,19 @@ The command dispatcher is [`run()`](../src/cli.rs#run), while
 
 ## Lint
 
-`awiki lint [flags] [directory] [-json]` validates graph connectivity and configured
+`awiki lint [flags] [directory] [-json] [-include glob]` validates graph connectivity and configured
 rules. A directory argument and `-root` are alternatives; supplying both is an
 error.
 
 ```sh
 awiki lint docs/
 awiki lint -root ~/wiki -recursive
+awiki lint -root . -recursive -include 'docs/**/*.md' -include 'AGENTS.md'
 ```
+
+Repeat `-include` to select the union of root-relative Markdown glob patterns; each pattern must match at least one document.
+Use `-recursive` to discover documents in subdirectories.
+Only selected documents are loaded into the wiki graph, so an excluded document is not a graph target.
 
 Without configuration, orphans, disconnected islands, and lines containing only
 one document link fail lint. Configured runs fail only on `error` diagnostics;

@@ -15,6 +15,139 @@ fn run(body: &str, policy: &str) -> Diagnostics {
 const BASE: &str = "[lint.rules]\norphan = 'off'\nlink-only-line = 'off'\n";
 
 #[test]
+fn undefined_explicit_references_are_reported_without_treating_text_as_links() {
+    let config = format!("{BASE}broken-reference-link = 'error'");
+    let body = "Summary.\n\n[missing][absent] ![image][no-image] [collapsed][] [ordinary]\n\n`[code][skip]`\n\n[defined][later]\n\n[later]: Target.md\n";
+    let result = run(body, &config);
+    let failures: Vec<_> = result
+        .items
+        .iter()
+        .filter(|item| item.rule == "broken-reference-link")
+        .collect();
+    assert_eq!(failures.len(), 3, "{:#?}", result.items);
+    assert!(failures.iter().all(|item| item.line == 3));
+    assert!(run(body, BASE)
+        .items
+        .iter()
+        .all(|item| item.rule != "broken-reference-link"));
+}
+
+#[test]
+fn local_resources_are_checked_without_changing_the_wiki_graph() {
+    let dir = tempfile::tempdir().unwrap();
+    let docs = dir.path().join("docs");
+    fs::create_dir(&docs).unwrap();
+    fs::write(dir.path().join("outside file.json"), "{}").unwrap();
+    fs::write(dir.path().join("outside.md"), "Outside.\n").unwrap();
+    fs::write(
+        docs.join("awiki.toml"),
+        format!("{BASE}broken-document-link = 'error'\nbroken-local-link = 'error'\n"),
+    )
+    .unwrap();
+    fs::write(docs.join("Note.md"), "Summary.\n\n[ok](../outside%20file.json?view=1) [outside](../outside.md)\n![lost](missing.png) [lost](missing.md) [[unknown]]\n\n`![ignored](code.png)`\n\n[web](https://invalid.example/x) <person@example.org>\n").unwrap();
+    let vault = Vault::load(docs.to_str().unwrap(), Options { recursive: false }).unwrap();
+    let result = vault.configured_lint().unwrap().unwrap();
+    let failures: Vec<_> = result
+        .items
+        .iter()
+        .map(|item| (item.rule.as_str(), item.line))
+        .collect();
+    assert_eq!(
+        failures,
+        vec![
+            ("broken-local-link", 4),
+            ("broken-local-link", 4),
+            ("broken-document-link", 4)
+        ]
+    );
+}
+
+#[test]
+fn local_markdown_fragments_follow_headings_and_duplicate_suffixes() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("Target.md"),
+        "Summary.\n\n# Hello `world`\n\n## Duplicate\n\n## Duplicate\n\n## 한글\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("Note.md"), "Summary.\n\n# Local\n\n[one](Target.md?view=1#hello-world) [two](Target.md#duplicate-1) [unicode](Target.md#%ED%95%9C%EA%B8%80) [self](#local)\n\n[missing](Target.md#no-such-heading) [missing self](#absent)\n").unwrap();
+    fs::write(
+        dir.path().join("awiki.toml"),
+        format!("{BASE}broken-local-link = 'error'\nbroken-code-reference = 'error'\n"),
+    )
+    .unwrap();
+    let vault = Vault::load(dir.path().to_str().unwrap(), Options { recursive: false }).unwrap();
+    let result = vault.configured_lint().unwrap().unwrap();
+    let failures: Vec<_> = result
+        .items
+        .iter()
+        .map(|item| (item.rule.as_str(), item.line))
+        .collect();
+    assert_eq!(
+        failures,
+        vec![("broken-local-link", 7), ("broken-local-link", 7)]
+    );
+}
+
+#[test]
+fn local_link_checks_do_not_weaken_graph_or_duplicate_source_errors() {
+    let body = "---\nsummary: '[front](missing-front.md)'\n---\n\nSummary.\n\n[missing](missing.md) [source](missing.ts#Thing)\n";
+    let severity = format!("{BASE}broken-document-link = 'error'\nbroken-local-link = 'warn'\n");
+    let result = run(body, &severity);
+    assert!(result
+        .items
+        .iter()
+        .any(|item| item.rule == "broken-document-link" && item.line == 2));
+    assert!(result
+        .items
+        .iter()
+        .any(|item| item.rule == "broken-document-link"
+            && item.line == 7
+            && item.severity == Severity::Error));
+    let both = format!("{BASE}broken-code-reference = 'error'\nbroken-local-link = 'error'\n");
+    let result = run("Summary.\n\n[source](missing.ts#Thing)\n", &both);
+    assert_eq!(
+        result
+            .items
+            .iter()
+            .map(|item| item.rule.as_str())
+            .collect::<Vec<_>>(),
+        vec!["broken-code-reference"]
+    );
+    let mixed = format!("{BASE}broken-code-reference = 'warn'\nbroken-local-link = 'error'\n");
+    let result = run("Summary.\n\n[source](missing.ts#Thing)\n", &mixed);
+    assert!(result.has_errors(), "{:?}", result.items);
+    let mixed_html = format!("{BASE}broken-code-reference = 'error'\nbroken-local-link = 'warn'\n");
+    let result = run("Summary.\n\n[page](missing.html#part)\n", &mixed_html);
+    assert!(result.has_errors(), "{:?}", result.items);
+}
+
+#[test]
+fn local_checks_allow_source_fragments_at_independent_severities() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("sample.ts"), "export function run() {}\n").unwrap();
+    fs::write(
+        dir.path().join("Note.md"),
+        "Summary.\n\n[valid](sample.ts#run) [missing](sample.ts#absent)\n",
+    )
+    .unwrap();
+    for (severity, expected_warnings) in [("off", 0), ("warn", 1)] {
+        fs::write(
+            dir.path().join("awiki.toml"),
+            format!("{BASE}broken-code-reference = '{severity}'\nbroken-local-link = 'error'\n"),
+        )
+        .unwrap();
+        let result = Vault::load(dir.path().to_str().unwrap(), Options { recursive: false })
+            .unwrap()
+            .configured_lint()
+            .unwrap()
+            .unwrap();
+        assert!(!result.has_errors(), "{:?}", result.items);
+        assert_eq!(result.items.len(), expected_warnings);
+    }
+}
+
+#[test]
 fn paragraph_is_a_block_not_a_line() {
     let config = format!("{BASE}first-block-paragraph = 'error'");
     for body in [

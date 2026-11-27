@@ -1,6 +1,6 @@
 //! Common syntax and source ranges used by analysis and document edits.
 use super::{frontmatter::parse_front_matter, links::split_wiki_link_parts, LinkKind};
-use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
+use pulldown_cmark::{BrokenLink, Event, LinkType, Options, Parser, Tag};
 use std::ops::Range;
 
 #[derive(Clone, Debug)]
@@ -12,11 +12,24 @@ pub(crate) struct SyntaxLink {
     pub(crate) inline: bool,
     pub(crate) title: String,
 }
+#[derive(Clone, Debug)]
+pub(crate) struct BrokenReference {
+    pub(crate) span: Range<usize>,
+    pub(crate) label: String,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct LocalResource {
+    pub(crate) target: String,
+    pub(crate) span: Range<usize>,
+    pub(crate) code_checked: bool,
+}
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Markdown {
     pub(crate) links: Vec<SyntaxLink>,
     pub(crate) verbatim: Vec<Range<usize>>,
     pub(crate) image_destinations: Vec<Range<usize>>,
+    pub(crate) broken_references: Vec<BrokenReference>,
+    pub(crate) local_resources: Vec<LocalResource>,
     pub(crate) first_paragraph: bool,
     pub(crate) first_offset: usize,
 }
@@ -36,7 +49,17 @@ impl Markdown {
             | Options::ENABLE_TABLES
             | Options::ENABLE_STRIKETHROUGH
             | Options::ENABLE_TASKLISTS;
-        let parser = Parser::new_ext(text, options);
+        let mut broken_references = Vec::new();
+        let mut callback = |link: BrokenLink<'_>| {
+            if body && matches!(link.link_type, LinkType::Reference | LinkType::Collapsed) {
+                broken_references.push(BrokenReference {
+                    span: shift(link.span, offset),
+                    label: link.reference.to_string(),
+                });
+            }
+            None
+        };
+        let parser = Parser::new_with_broken_link_callback(text, options, Some(&mut callback));
         let mut events = parser.into_offset_iter();
         if body {
             self.first_offset = offset;
@@ -57,8 +80,20 @@ impl Markdown {
                 Event::Start(Tag::CodeBlock(_) | Tag::HtmlBlock) => {
                     self.verbatim.push(shift(span, offset))
                 }
-                Event::Start(Tag::Image { link_type, id, .. }) => {
+                Event::Start(Tag::Image {
+                    link_type,
+                    dest_url,
+                    id,
+                    ..
+                }) => {
                     images += 1;
+                    if body && !matches!(link_type, LinkType::WikiLink { .. }) {
+                        self.local_resources.push(LocalResource {
+                            target: dest_url.to_string(),
+                            span: shift(span.clone(), offset),
+                            code_checked: false,
+                        });
+                    }
                     if let Some(range) = destination(
                         text,
                         &span,
@@ -83,6 +118,13 @@ impl Markdown {
                     } else {
                         LinkKind::Markdown
                     };
+                    if body && kind == LinkKind::Markdown && link_type != LinkType::Email {
+                        self.local_resources.push(LocalResource {
+                            target: dest_url.to_string(),
+                            span: shift(span.clone(), offset),
+                            code_checked: true,
+                        });
+                    }
                     let Some(range) = destination(
                         text,
                         &span,
@@ -111,6 +153,8 @@ impl Markdown {
                 _ => {}
             }
         }
+        drop(events);
+        self.broken_references.extend(broken_references);
     }
 }
 fn shift(range: Range<usize>, offset: usize) -> Range<usize> {

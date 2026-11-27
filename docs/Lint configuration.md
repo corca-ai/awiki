@@ -14,6 +14,8 @@ link-only-line = "error"
 broken-document-link = "error"
 first-block-paragraph = "error"
 broken-code-reference = "error"
+broken-reference-link = "error"
+broken-local-link = "error"
 
 [[lint.overrides]]
 files = ["README.md", "**/README.md"]
@@ -36,6 +38,8 @@ and validates the policy before checking documents.
 | `broken-document-link` | `off` | A document link cannot resolve to a page in the loaded wiki. |
 | `first-block-paragraph` | `off` | The first body block is not a paragraph. |
 | `broken-code-reference` | `off` | A local code fragment cannot resolve to a supported source declaration. |
+| `broken-reference-link` | `off` | An explicit Markdown reference link or image uses an undefined label. |
+| `broken-local-link` | `off` | A local Markdown destination is missing or a Markdown heading fragment cannot be found. |
 
 Lines with two or more document links are allowed by `link-only-line`.
 `first-block-paragraph` ignores front matter, blank lines, and HTML comments;
@@ -46,6 +50,13 @@ Document-link checking uses [Link resolution](<Link resolution.md>) and checks
 page targets, not heading or block anchors. Source and asset links are not
 missing wiki pages. [Code references](<Code references.md>) describes source
 languages and declaration boundaries.
+
+`broken-reference-link` checks full and collapsed references in the body; it leaves shortcut text alone.
+`broken-local-link` checks Markdown links and images against actual relative filesystem paths, including files outside the wiki root, and checks Markdown heading fragments with GitHub-style anchors.
+It does not access network URLs or inspect raw HTML links, and it rejects root-relative paths and unsupported fragments rather than assuming a site root or renderer.
+When both document and local-link checks are enabled, a Markdown link inspected at least as strictly by the local rule is not also reported as an unresolved wiki page; wikilinks and the document graph retain their existing meaning.
+For TypeScript and Rust links with fragments, the local rule checks the file while `broken-code-reference` checks the declaration when enabled; duplicate file errors are avoided when the code rule is at least as strict.
+These rules do not change the files selected for the vault or check Markdown outside that selection.
 
 ## Path exceptions
 
