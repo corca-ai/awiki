@@ -107,3 +107,9 @@ pub(crate) fn trim_md_ext(rel_file: &str) -> String {
         rel_file.to_string()
     }
 }
+
+pub(crate) fn is_document(target: &str) -> bool {
+    Path::new(target)
+        .extension()
+        .is_none_or(|ext| ext.eq_ignore_ascii_case("md"))
+}

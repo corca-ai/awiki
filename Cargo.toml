@@ -1,6 +1,6 @@
 [package]
 name = "awiki"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "CLI for exploring and maintaining flat-file Markdown wikis"
 license = "MIT"
@@ -9,9 +9,15 @@ repository = "https://github.com/corca-ai/awiki"
 rust-version = "1.85"
 
 [dependencies]
+globset = "0.4.19"
+pulldown-cmark = "0.13.6"
 rand = "0.8"
 rayon = "1.10"
 rustc-hash = "2.1"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "0.8"
+tree-sitter = "0.25"
+tree-sitter-typescript = "0.23"
 unicode-normalization = "0.1"
 
 [dev-dependencies]

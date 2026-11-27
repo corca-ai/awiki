@@ -14,11 +14,15 @@ pub(crate) fn parse_document_links(
     let mut links = Vec::new();
     let mut link_only = Vec::new();
     if fm.present {
-        for (line, _, _) in scan_lines(&content[..fm.body_offset]) {
+        for (index, (line, _, _)) in scan_lines(&content[..fm.body_offset])
+            .into_iter()
+            .enumerate()
+        {
             let context = normalize_preview_line(trim_line(line));
             let mut parsed = parse_links_in_line(line);
             for link in &mut parsed {
                 link.context = context.clone();
+                link.line = index + 1;
             }
             links.extend(parsed);
         }
@@ -47,6 +51,7 @@ pub(crate) fn parse_document_links(
         let mut parsed = parse_links_in_line(line);
         for link in &mut parsed {
             link.context = context.clone();
+            link.line = body_start_line + line_idx + 1;
         }
         if parsed.len() == 1 && is_link_only_line(trimmed) {
             link_only.push(LinkOnlyLine {
@@ -80,6 +85,7 @@ fn parse_wiki_links(line: &str) -> Vec<Link> {
                 let key = document_key(base);
                 if !key.is_empty() {
                     out.push(Link {
+                        line: 0,
                         kind: LinkKind::Wiki,
                         display_target: format!("{}{}", display_target(base), suffix),
                         target_key: key,
@@ -113,8 +119,9 @@ fn parse_markdown_links(line: &str) -> Vec<Link> {
                             if let Some(target) = parse_markdown_target(dest) {
                                 let (base, suffix) = split_target_suffix(target);
                                 let key = document_key(base);
-                                if !key.is_empty() {
+                                if !key.is_empty() && super::path::is_document(base) {
                                     out.push(Link {
+                                        line: 0,
                                         kind: LinkKind::Markdown,
                                         display_target: format!(
                                             "{}{}",

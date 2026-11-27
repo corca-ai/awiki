@@ -4,7 +4,9 @@
 
 `awiki` is intentionally small Rust CLI code with a few focused dependencies:
 Rayon for parallel document parsing, `rustc-hash` for fast in-memory indexes,
-and Unicode normalization for stable document identity.
+and Unicode normalization for stable document identity. Configurable lint uses
+Serde/TOML and globset for policy, pulldown-cmark for Markdown blocks and code
+reference links, and Tree-sitter with the TypeScript grammar for declarations.
 
 The codebase keeps process concerns at the edge and wiki behavior in focused
 modules:
@@ -46,6 +48,8 @@ The load module owns filesystem discovery and graph construction:
 - `src/wiki/frontmatter.rs` parses and rewrites YAML front matter fields used by
   the tool
 - `src/wiki/format.rs` rewrites Markdown documents with awiki's default style
+- `src/wiki/lint.rs` loads TOML lint policy, applies path overrides, and validates
+  Markdown opening blocks and TypeScript/TSX declaration references
 - `src/wiki/links.rs` parses wiki/Markdown links and detects link-only lines
 - `src/wiki/path.rs` normalizes document names and repo-relative paths
 - `src/wiki/analysis.rs` implements lint, shortest-path, and wanted-page logic

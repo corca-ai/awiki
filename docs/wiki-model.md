@@ -81,8 +81,13 @@ Markdown token.
 - heading-only links such as `[jump](#section)`
 - self-links for graph connectivity
 
+Local Markdown links with a non-`.md` file extension are source/asset references,
+not wiki graph edges or wanted pages. Optional code-reference validation is
+described in [CLI Guide](cli.md#configurable-lint).
+
 Broken links are preserved because they are useful placeholders in a wiki
-gardening workflow and for ranking missing pages with `wanted`.
+gardening workflow and for ranking missing pages with `wanted`. A project may
+opt into reporting them as lint errors in `awiki.toml`.
 
 ## Graph Rules
 

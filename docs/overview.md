@@ -36,7 +36,9 @@ awiki suggest -root ~/wiki
 awiki lint -root ~/wiki -recursive
 ```
 
-`lint` is for rules that should fail automation. `suggest` is for refactoring
+`lint` is for rules that should fail automation. An optional root-level
+`awiki.toml` configures rule severities, first-paragraph conventions, and
+document/code reference validation; see [CLI Guide](cli.md#configurable-lint). `suggest` is for refactoring
 hints that deserve human judgment.
 
 ## Install

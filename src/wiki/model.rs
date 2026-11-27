@@ -11,6 +11,7 @@ pub(crate) enum LinkKind {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Link {
+    pub(crate) line: usize,
     pub(crate) kind: LinkKind,
     pub(crate) display_target: String,
     pub(crate) target_key: String,

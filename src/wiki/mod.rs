@@ -3,6 +3,7 @@ mod format;
 mod frontmatter;
 mod graph;
 mod links;
+mod lint;
 mod load;
 mod model;
 mod path;

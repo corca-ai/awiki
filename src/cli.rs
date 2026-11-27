@@ -146,6 +146,23 @@ fn lint_cmd(args: &[String]) -> Result<(), String> {
             recursive: parsed.recursive,
         },
     )?;
+    if !parsed.rest.is_empty() {
+        return Err("lint does not accept positional arguments".into());
+    }
+    if let Some(diagnostics) = vault.configured_lint()? {
+        for line in &diagnostics.lines {
+            println!("{line}");
+        }
+        if diagnostics.failed {
+            return Err("lint issues found".into());
+        }
+        println!(
+            "// ok lint documents={} diagnostics={}",
+            vault.documents.len(),
+            diagnostics.lines.len()
+        );
+        return Ok(());
+    }
     let report = vault.lint();
     if report.has_issues() {
         println!("{}", format_lint_report(&vault, &report));

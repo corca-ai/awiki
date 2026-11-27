@@ -86,6 +86,74 @@ On success, stdout prints:
 
 - `// ok connected_graph documents=<n> largest_component_ratio=<r> orphan_rate=<r> content_coverage=<r>`
 
+#### Configurable lint
+
+Place `awiki.toml` directly in the wiki root selected by `-root` (the current
+working directory by default). Only `lint` reads this file. There is no parent
+config search or config merging. Without a config, existing lint policy and
+output are preserved.
+
+```toml
+[lint.rules]
+orphan = "warn"
+island = "error"
+link-only-line = "error"
+broken-document-link = "error"
+first-block-paragraph = "error"
+broken-code-reference = "error"
+
+[[lint.overrides]]
+files = ["README.md", "**/README.md"]
+[lint.overrides.rules]
+first-block-paragraph = "off"
+```
+
+Each rule accepts `off`, `warn`, or `error`. Only errors fail lint. Unspecified
+rules keep their defaults: orphan, island, and link-only-line are errors;
+the three new rules are off. Unknown keys, rule names, severities, and invalid
+globs are configuration errors.
+
+Use `[lint] exclude = ["generated/**"]` to suppress all diagnostics for matching
+documents. Override `files` and `exclude` are globs matched against the actual
+root-relative filename including `.md`; later matching overrides win per rule.
+Exclusions take precedence. Excluded documents remain in the graph and remain
+valid link targets.
+
+Configured output uses `path.md:line: error[rule]: message` (or `warn`), in
+stable order. Successful configured runs end with `// ok lint ...`.
+
+- `broken-document-link` checks unresolved document links using the usual wiki
+  resolution rules. It checks file targets, not Markdown heading/block anchors.
+  Source and asset paths are not missing wiki documents.
+- `first-block-paragraph` requires the first body block to be a paragraph,
+  ignoring front matter, blank lines, and HTML comments. Empty documents,
+  headings (including setext headings), lists, quotes, code, and HTML blocks
+  fail. It checks structure, not whether the paragraph is a good summary.
+- `broken-code-reference` checks local Markdown links with a non-Markdown file
+  path and a fragment, such as the following:
+
+  ```md
+  [`blah()`](../src/Foo.ts#blah)
+  [`Foo`](../src/Foo.ts#Foo)
+  [`Foo.blah()`](../src/Foo.ts#Foo.blah)
+  ```
+
+Code paths resolve from the referring document's directory, including paths
+outside the wiki root. TypeScript (`.ts`) and TSX (`.tsx`) are supported. Names
+are case-sensitive, and fragments contain declaration names without `()`.
+Top-level functions, variables, classes, interfaces, types, enums, and namespaces
+can be referenced, as can directly declared class/interface members qualified by
+their containing declaration. Overloads share the same declaration name.
+Inherited members, re-exported aliases, locals, inferred object properties, and
+type-based resolution are not supported. Link labels do not affect validation.
+
+Missing/unreadable files, unsupported languages, syntax errors, and missing
+names produce distinct diagnostics. Code examples in fenced blocks and inline
+code are ignored. Images and external links are ignored. Code references are
+body links; front matter does not participate in code-reference validation.
+These checks validate references; they do not make editors or GitHub navigate
+to custom symbol fragments. Source files are not document graph nodes.
+
 ### `format`
 
 Rewrites Markdown files in place using awiki's default style. It accepts the
