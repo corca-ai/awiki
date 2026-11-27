@@ -20,8 +20,36 @@ use crate::{
 
 impl Vault {
     pub(crate) fn load(root: &str, opts: Options) -> Result<Self, String> {
+        Self::load_selected(root, opts, &[])
+    }
+
+    pub(crate) fn load_selected(
+        root: &str,
+        opts: Options,
+        patterns: &[String],
+    ) -> Result<Self, String> {
         let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
         let mut files = discover_files(&root, opts.recursive)?;
+        if !patterns.is_empty() {
+            let mut selected = std::collections::HashSet::new();
+            for pattern in patterns {
+                let matcher = globset::GlobBuilder::new(pattern)
+                    .literal_separator(true)
+                    .build()
+                    .map_err(|e| e.to_string())?
+                    .compile_matcher();
+                let matches: Vec<_> = files
+                    .iter()
+                    .filter(|(_, name)| matcher.is_match(name))
+                    .map(|(_, name)| name.clone())
+                    .collect();
+                if matches.is_empty() {
+                    return Err(format!("include pattern matches no documents: {pattern}"));
+                }
+                selected.extend(matches);
+            }
+            files.retain(|(_, name)| selected.contains(name));
+        }
         files.sort_by_key(|a| lower(&a.1));
         let recursive = opts.recursive;
 

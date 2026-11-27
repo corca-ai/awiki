@@ -10,6 +10,8 @@ const RULES: &[&str] = &[
     "broken-document-link",
     "first-block-paragraph",
     "broken-code-reference",
+    "broken-reference-link",
+    "broken-local-link",
 ];
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]

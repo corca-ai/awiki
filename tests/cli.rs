@@ -95,6 +95,82 @@ fn json_diagnostics_have_stable_fields_numeric_positions_and_exit_codes() {
 }
 
 #[test]
+fn local_and_reference_lint_report_real_markdown_failures() {
+    let dir = fixture();
+    fs::write(dir.path().join("Target.md"), "Summary.\n\n# Existing\n").unwrap();
+    fs::write(dir.path().join("Source.md"), "Summary.\n\n[ok](Target.md#existing) [missing](Target.md#absent)\n[asset](missing.json) [reference][undefined]\n").unwrap();
+    fs::write(dir.path().join("awiki.toml"), "[lint.rules]\norphan='off'\nisland='off'\nlink-only-line='off'\nbroken-local-link='error'\nbroken-reference-link='error'\n").unwrap();
+    let out = run(dir.path(), &["lint", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["errors"], 3);
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics[0]["rule"], "broken-local-link");
+    assert_eq!(diagnostics[0]["line"], 3);
+    assert_eq!(diagnostics[1]["rule"], "broken-local-link");
+    assert_eq!(diagnostics[2]["rule"], "broken-reference-link");
+}
+
+#[test]
+fn lint_selects_repository_documents_without_loading_unselected_markdown() {
+    let dir = fixture();
+    fs::create_dir(dir.path().join("docs")).unwrap();
+    fs::create_dir_all(dir.path().join("gateway/connectors/example")).unwrap();
+    fs::create_dir_all(dir.path().join("gateway/connectors/example/nested")).unwrap();
+    fs::write(dir.path().join("docs/Guide.md"), "Guide.\n").unwrap();
+    fs::write(
+        dir.path().join("AGENTS.md"),
+        "Agent guide.\n\n[guide](docs/Guide.md)\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path()
+            .join("gateway/connectors/example/nested/README.md"),
+        "Nested.\n\n[bad][undefined]\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("gateway/connectors/example/README.md"),
+        "Connector.\n\n[missing](missing.json)\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("Target.md"),
+        "Ignored.\n\n[bad][undefined]\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("awiki.toml"), "[lint.rules]\norphan='off'\nisland='off'\nlink-only-line='off'\nbroken-local-link='error'\nbroken-reference-link='error'\n").unwrap();
+    let out = run(
+        dir.path(),
+        &[
+            "lint",
+            "-recursive",
+            "-include",
+            "docs/**/*.md",
+            "-include",
+            "AGENTS.md",
+            "-include",
+            "gateway/connectors/*/README.md",
+            "-json",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["documents"], 3);
+    assert_eq!(report["errors"], 1);
+    assert_eq!(
+        report["diagnostics"][0]["path"],
+        "gateway/connectors/example/README.md"
+    );
+    let missing = run(
+        dir.path(),
+        &["lint", "-recursive", "-include", "absent/*.md", "-json"],
+    );
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("matches no documents"));
+}
+
+#[test]
 fn invalid_config_uses_stderr_and_legacy_json_uses_default_policy() {
     let dir = fixture();
     fs::write(dir.path().join("awiki.toml"), "[lint.rules]\nunknown='off'").unwrap();
