@@ -11,6 +11,8 @@ allow = [
     "Zlib",
 ]
 confidence-threshold = 0.8
+# Serde's procedural macro parser uses Unicode identifier tables.
+exceptions = [{ name = "unicode-ident", allow = ["Unicode-3.0"] }]
 
 [bans]
 multiple-versions = "warn"
