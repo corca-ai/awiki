@@ -117,7 +117,6 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
-      XWIN_CROSS_COMPILER: clang
     steps:
       - name: enable windows longpaths
         run: |
@@ -142,17 +141,28 @@ jobs:
           pattern: artifacts-*
           path: target/distrib/
           merge-multiple: true
-      - name: Pin cargo-xwin for Windows cross-build
-        if: ${{ contains(matrix.targets, 'x86_64-pc-windows-gnu') }}
-        run: pip3 install cargo-xwin==0.24.2
       - name: Install dependencies
+        if: ${{ !contains(matrix.targets, 'x86_64-pc-windows-gnu') }}
         run: |
           ${{ matrix.packages_install }}
       - name: Build artifacts
+        if: ${{ !contains(matrix.targets, 'x86_64-pc-windows-gnu') }}
         run: |
-          # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
-          echo "dist ran successfully"
+      - name: Cross-compile and package Windows GNU
+        if: ${{ contains(matrix.targets, 'x86_64-pc-windows-gnu') }}
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64 zip
+          rustup target add x86_64-pc-windows-gnu
+          cargo build --locked --profile dist --target x86_64-pc-windows-gnu
+          archive=awiki-x86_64-pc-windows-gnu.zip
+          mkdir -p target/distrib/windows-gnu
+          cp target/x86_64-pc-windows-gnu/dist/awiki.exe LICENSE README.md target/distrib/windows-gnu/
+          (cd target/distrib/windows-gnu && zip -q "../$archive" awiki.exe LICENSE README.md)
+          (cd target/distrib && sha256sum "$archive" > "$archive.sha256")
+          jq --arg zip "$PWD/target/distrib/$archive" --arg sha "$PWD/target/distrib/$archive.sha256" '.upload_files = [$zip, $sha]' target/distrib/plan-dist-manifest.json > dist-manifest.json
       - id: cargo-dist
         name: Post-build
         # We force bash here just because github makes it really hard to get values up
