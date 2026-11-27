@@ -10,9 +10,12 @@ formula = "awiki"
 publish-jobs = ["homebrew"]
 allow-dirty = ["ci"]
 pr-run-mode = "upload"
-targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-gnu"]
 
 # Keep Apple Silicon builds on a supported GitHub-hosted image.
 [dist.github-custom-runners]
 aarch64-apple-darwin = "macos-15"
-x86_64-pc-windows-msvc = "ubuntu-22.04"
+x86_64-pc-windows-gnu = "ubuntu-22.04"
+
+[dist.dependencies.apt]
+gcc-mingw-w64-x86-64 = { targets = ["x86_64-pc-windows-gnu"] }
