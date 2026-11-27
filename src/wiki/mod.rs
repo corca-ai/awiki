@@ -1,13 +1,16 @@
 mod analysis;
+pub(crate) mod changes;
 mod format;
 mod frontmatter;
 mod graph;
 mod links;
 mod lint;
 mod load;
+mod markdown;
 mod model;
 mod path;
 mod rename;
+mod source;
 mod suggest;
 
 pub(crate) use graph::{format_graph_edges, format_graph_json, format_graph_nodes};

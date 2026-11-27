@@ -9,7 +9,7 @@ LINK_PATH="${AWIKI_LINK_PATH:-$LINK_DIR/awiki}"
 cd "$ROOT"
 mkdir -p "$(dirname "$OUTPUT")"
 
-cargo build --release "$@"
+cargo build --locked --release "$@"
 cp "$ROOT/target/release/awiki" "$OUTPUT"
 
 if [[ "${AWIKI_SKIP_LINK:-0}" == "1" ]]; then

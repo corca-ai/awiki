@@ -130,21 +130,6 @@ pub(crate) fn truncate_runes(value: &str, limit: usize) -> String {
         + "..."
 }
 
-pub(crate) fn find_byte(bytes: &[u8], start: usize, needle: u8) -> Option<usize> {
-    bytes
-        .iter()
-        .enumerate()
-        .skip(start)
-        .find_map(|(i, &b)| (b == needle).then_some(i))
-}
-
-pub(crate) fn find_bytes(bytes: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
-    bytes[start..]
-        .windows(needle.len())
-        .position(|w| w == needle)
-        .map(|p| p + start)
-}
-
 pub(crate) fn strip_line_only_markdown(value: &str) -> String {
     let mut value = value.trim().to_string();
     loop {

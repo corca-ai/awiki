@@ -1,25 +1,25 @@
-# Agent Guide
+awiki is a CLI for exploring and maintaining flat-file Markdown wikis; this guide indexes contributor documentation and source entry points.
 
-`awiki` is a CLI for exploring and maintaining flat-file Markdown wikis.
+## Read first
 
-## Read First
+Read the [Documentation guide](<docs/Documentation guide.md>) before editing docs.
+The [Overview](docs/Overview.md) introduces the product. Use the
+[Command-line interface](<docs/Command-line interface.md>) for commands,
+[Lint configuration](<docs/Lint configuration.md>) for policy, and
+[Code references](<docs/Code references.md>) for source links.
 
-- [Documentation guide](docs/metadoc.md) — rules for writing and maintaining docs
-- [Overview](docs/overview.md) — what awiki is, install paths, and quick start
-- [CLI Reference](docs/cli.md) — command semantics and examples
-- [Wiki Model](docs/wiki-model.md) — flat-by-default and recursive layouts, identity resolution, and link parsing
-- [Link Resolution](docs/link-resolution.md) — Obsidian-aligned link resolution rules
-- [Build & Run](docs/build.md) — local toolchain and build commands
-- [Testing](docs/testing.md) — test, lint, and hook workflow
-- [Release](docs/release.md) — CI and tagged release publishing
-- [Architecture](docs/architecture.md) — package layout and responsibility boundaries
+Use [Wiki model](<docs/Wiki model.md>) and
+[Link resolution](<docs/Link resolution.md>) for identity and graph semantics.
+Follow [Installation](docs/Installation.md),
+[Build and run](<docs/Build and run.md>), [Testing](docs/Testing.md), and
+[Release](docs/Release.md) for development and publishing.
 
-## Project Layout
+## Source entry points
 
-- [src/main.rs](src/main.rs) — process entry point
-- [src/cli.rs](src/cli.rs) — command parsing and orchestration
-- [src/output.rs](src/output.rs) — terminal output formatting
-- [src/text.rs](src/text.rs) — line scanning and text helpers
-- [src/wiki](src/wiki) — wiki model, loading, parsing, graph analysis, and rename logic
+[`main()`](src/main.rs#main) starts the CLI dispatcher
+[`run()`](src/cli.rs#run). [`Vault`](src/wiki/model.rs#Vault) holds the wiki model;
+[Architecture](docs/Architecture.md) connects its parsing, analysis, lint,
+formatting, rename, and output modules.
 
-Note: `CLAUDE.md` is a symlink to `AGENTS.md`.
+`CLAUDE.md` is a symlink to this guide. Always run `awiki lint docs/` after
+changing documentation and fix every issue.

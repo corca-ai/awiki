@@ -23,6 +23,10 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 step "test"
 cargo test --locked
 
+step "wiki documentation"
+cargo run --locked --quiet -- lint docs/
+cargo run --locked --quiet -- lint -recursive
+
 if [[ "$mode" == "--fast" ]]; then
   exit 0
 fi

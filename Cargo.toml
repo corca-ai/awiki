@@ -1,12 +1,12 @@
 [package]
 name = "awiki"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 description = "CLI for exploring and maintaining flat-file Markdown wikis"
 license = "MIT"
-homepage = "https://github.com/corca-ai/awiki"
+homepage = "https://github.com/corca-ai/awiki/blob/main/README.md"
 repository = "https://github.com/corca-ai/awiki"
-rust-version = "1.85"
+rust-version = "1.100"
 
 [dependencies]
 globset = "0.4.19"
@@ -14,13 +14,14 @@ pulldown-cmark = "0.13.6"
 rand = "0.8"
 rayon = "1.10"
 rustc-hash = "2.1"
+serde_json = "1"
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "0.8"
 tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
 tree-sitter-typescript = "0.23"
 unicode-normalization = "0.1"
 
-[dev-dependencies]
 tempfile = "3.14"
 
 [profile.release]

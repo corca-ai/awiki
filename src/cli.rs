@@ -1,10 +1,8 @@
 use std::{env, process};
 
-use crate::{
-    output::format_lint_report,
-    wiki::{format_graph_edges, format_graph_json, format_graph_nodes, Options, Vault},
-};
+use crate::wiki::{format_graph_edges, format_graph_json, format_graph_nodes, Options, Vault};
 
+mod lint;
 mod suggest;
 
 const WANTED_SOURCE_PREVIEW_LIMIT: usize = 10;
@@ -27,7 +25,7 @@ pub(crate) fn run() {
             usage();
             Ok(())
         }
-        "lint" => lint_cmd(&argv),
+        "lint" => lint::lint_cmd(&argv),
         "format" => format_cmd(&argv),
         "links" => links_cmd(&argv),
         "graph" => graph_cmd(&argv),
@@ -66,8 +64,8 @@ fn usage() {
     eprintln!("avoiding empty stubs, and making long paths and heavily linked missing pages easy to inspect.");
     eprintln!();
     eprintln!("Commands:");
-    eprintln!("  awiki lint [flags]");
-    eprintln!("      Validate the wiki graph");
+    eprintln!("  awiki lint [flags] [directory]");
+    eprintln!("      Validate the wiki graph and configured lint rules");
     eprintln!("  awiki format [flags]");
     eprintln!("      Rewrite Markdown files with awiki's default style");
     eprintln!("  awiki avg-shortest-path [flags]");
@@ -136,50 +134,10 @@ fn parse_common_or_help(args: &[String], usage: &str) -> Result<Option<Args>, St
     }
 }
 
-fn lint_cmd(args: &[String]) -> Result<(), String> {
-    let Some(parsed) = parse_common_or_help(args, "Usage: awiki lint [flags]")? else {
-        return Ok(());
-    };
-    let vault = Vault::load(
-        &parsed.root,
-        Options {
-            recursive: parsed.recursive,
-        },
-    )?;
-    if !parsed.rest.is_empty() {
-        return Err("lint does not accept positional arguments".into());
-    }
-    if let Some(diagnostics) = vault.configured_lint()? {
-        for line in &diagnostics.lines {
-            println!("{line}");
-        }
-        if diagnostics.failed {
-            return Err("lint issues found".into());
-        }
-        println!(
-            "// ok lint documents={} diagnostics={}",
-            vault.documents.len(),
-            diagnostics.lines.len()
-        );
-        return Ok(());
-    }
-    let report = vault.lint();
-    if report.has_issues() {
-        println!("{}", format_lint_report(&vault, &report));
-        return Err("lint issues found".to_string());
-    }
-    println!(
-        "// ok connected_graph documents={} largest_component_ratio={:.4} orphan_rate={:.4} content_coverage={:.4}",
-        report.document_count,
-        report.largest_component_ratio(),
-        report.orphan_rate(),
-        report.content_coverage()
-    );
-    Ok(())
-}
-
 fn format_cmd(args: &[String]) -> Result<(), String> {
-    let Some(parsed) = parse_common_or_help(args, "Usage: awiki format [flags]")? else {
+    let (common, dry_run) = edit_flags(args);
+    let Some(parsed) = parse_common_or_help(&common, "Usage: awiki format [flags] [--dry-run]")?
+    else {
         return Ok(());
     };
     if !parsed.rest.is_empty() {
@@ -191,7 +149,13 @@ fn format_cmd(args: &[String]) -> Result<(), String> {
             recursive: parsed.recursive,
         },
     )?;
-    let report = vault.format()?;
+    let report = if dry_run {
+        let (plan, report) = vault.plan_format();
+        print_plan(&plan);
+        report
+    } else {
+        vault.format()?
+    };
     println!(
         "// format documents={} changed={}",
         report.documents,
@@ -436,7 +400,11 @@ fn avg_shortest_path_cmd(args: &[String]) -> Result<(), String> {
 }
 
 fn rename_cmd(args: &[String]) -> Result<(), String> {
-    let Some(parsed) = parse_common_or_help(args, "Usage: awiki rename [flags] <old> <new>")?
+    let (common, dry_run) = edit_flags(args);
+    let Some(parsed) = parse_common_or_help(
+        &common,
+        "Usage: awiki rename [flags] [--dry-run] <old> <new>",
+    )?
     else {
         return Ok(());
     };
@@ -449,7 +417,13 @@ fn rename_cmd(args: &[String]) -> Result<(), String> {
             recursive: parsed.recursive,
         },
     )?;
-    let result = vault.rename(&parsed.rest[0], &parsed.rest[1])?;
+    let result = if dry_run {
+        let (plan, report) = vault.plan_rename(&parsed.rest[0], &parsed.rest[1])?;
+        print_plan(&plan);
+        report
+    } else {
+        vault.rename(&parsed.rest[0], &parsed.rest[1])?
+    };
     println!(
         "// rename old={}.md new={}.md",
         result.old_name, result.new_name
@@ -459,6 +433,22 @@ fn rename_cmd(args: &[String]) -> Result<(), String> {
         result.links_updated, result.files_touched, result.title_updated
     );
     Ok(())
+}
+
+fn edit_flags(args: &[String]) -> (Vec<String>, bool) {
+    (
+        args.iter()
+            .filter(|arg| arg.as_str() != "--dry-run")
+            .cloned()
+            .collect(),
+        args.iter().any(|arg| arg == "--dry-run"),
+    )
+}
+fn print_plan(plan: &crate::wiki::changes::ChangePlan) {
+    println!("// dry_run changes={}", plan.changes.len());
+    for change in &plan.changes {
+        println!("// change from={:?} to={:?}", change.from, change.to);
+    }
 }
 
 #[cfg(test)]

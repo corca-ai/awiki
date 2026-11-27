@@ -1,212 +1,69 @@
-use super::{FrontMatter, Link, LinkKind, LinkOnlyLine};
-use crate::{
-    text::{
-        contains_letter_or_digit, fence_start, find_byte, find_bytes, mask_inline_code,
-        next_fence_state, normalize_preview_line, scan_lines, strip_line_only_markdown, trim_line,
-    },
-    wiki::path::{document_key, normalize_document_name},
+use super::{
+    markdown::{local_target, Markdown},
+    path::{document_key, is_document, normalize_document_name},
+    Link, LinkKind, LinkOnlyLine,
+};
+use crate::text::{
+    contains_letter_or_digit, normalize_preview_line, scan_lines, strip_line_only_markdown,
+    trim_line,
 };
 
 pub(crate) fn parse_document_links(
     content: &str,
-    fm: &FrontMatter,
+    parsed: &Markdown,
 ) -> (Vec<Link>, Vec<LinkOnlyLine>) {
     let mut links = Vec::new();
-    let mut link_only = Vec::new();
-    if fm.present {
-        for (index, (line, _, _)) in scan_lines(&content[..fm.body_offset])
-            .into_iter()
-            .enumerate()
-        {
-            let context = normalize_preview_line(trim_line(line));
-            let mut parsed = parse_links_in_line(line);
-            for link in &mut parsed {
-                link.context = context.clone();
-                link.line = index + 1;
-            }
-            links.extend(parsed);
+    let mut issues = Vec::new();
+    let mut by_line = std::collections::BTreeMap::<usize, Vec<&super::markdown::SyntaxLink>>::new();
+    let lines = scan_lines(content);
+    let body_offset = super::frontmatter::parse_front_matter(content).body_offset;
+    for syntax in &parsed.links {
+        if !local_target(&syntax.target) {
+            continue;
         }
+        let (base, suffix) = split_target_suffix(&syntax.target);
+        if syntax.kind == LinkKind::Markdown && !is_document(base) {
+            continue;
+        }
+        let key = document_key(base);
+        if key.is_empty() {
+            continue;
+        }
+        let index = lines.partition_point(|(_, _, end)| *end <= syntax.span.start);
+        let (line, start, end) = lines[index];
+        if start >= body_offset && syntax.span.end <= end {
+            by_line.entry(index).or_default().push(syntax);
+        }
+        links.push(Link {
+            line: index + 1,
+            column: content[start..syntax.span.start].chars().count() + 1,
+            kind: syntax.kind,
+            display_target: format!("{}{}", display_target(base), suffix),
+            target_key: key,
+            raw_target: raw_link_target(base),
+            resolved: None,
+            context: normalize_preview_line(trim_line(line)),
+        });
     }
-    let mut in_fence = false;
-    let mut fence_marker = '\0';
-    let mut fence_width = 0usize;
-    let body_start_line = content[..fm.body_offset]
-        .bytes()
-        .filter(|&b| b == b'\n')
-        .count();
-    for (line_idx, (line, _, _)) in scan_lines(&content[fm.body_offset..])
-        .into_iter()
-        .enumerate()
-    {
-        let trimmed = trim_line(line).trim();
-        if let Some((marker, width)) = fence_start(trimmed) {
-            (in_fence, fence_marker, fence_width) =
-                next_fence_state(in_fence, fence_marker, fence_width, marker, width);
+    for (index, spans) in by_line {
+        let (line, start, end) = lines[index];
+        if spans.len() != 1 {
             continue;
         }
-        if in_fence || trimmed.is_empty() {
-            continue;
-        }
-        let context = normalize_preview_line(trimmed);
-        let mut parsed = parse_links_in_line(line);
-        for link in &mut parsed {
-            link.context = context.clone();
-            link.line = body_start_line + line_idx + 1;
-        }
-        if parsed.len() == 1 && is_link_only_line(trimmed) {
-            link_only.push(LinkOnlyLine {
-                line: body_start_line + line_idx + 1,
-                text: trimmed.to_string(),
+        let span = &spans[0].span;
+        let rest = format!(
+            "{} {}",
+            &content[start..span.start],
+            &content[span.end..end]
+        );
+        if !contains_letter_or_digit(&strip_line_only_markdown(&rest)) {
+            issues.push(LinkOnlyLine {
+                line: index + 1,
+                text: trim_line(line).trim().into(),
             });
         }
-        links.extend(parsed);
     }
-    (links, link_only)
-}
-
-fn parse_links_in_line(line: &str) -> Vec<Link> {
-    let masked = mask_inline_code(line);
-    let mut links = parse_wiki_links(&masked);
-    links.extend(parse_markdown_links(&masked));
-    links
-}
-
-fn parse_wiki_links(line: &str) -> Vec<Link> {
-    let bytes = line.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i + 3 < bytes.len() {
-        if bytes[i] == b'[' && bytes[i + 1] == b'[' {
-            if let Some(end) = find_bytes(bytes, i + 2, b"]]") {
-                let inner = &line[i + 2..end];
-                let (target, _, _, _) = split_wiki_link_parts(inner);
-                let target = target.trim();
-                let (base, suffix) = split_target_suffix(target);
-                let key = document_key(base);
-                if !key.is_empty() {
-                    out.push(Link {
-                        line: 0,
-                        kind: LinkKind::Wiki,
-                        display_target: format!("{}{}", display_target(base), suffix),
-                        target_key: key,
-                        raw_target: raw_link_target(base),
-                        resolved: None,
-                        context: String::new(),
-                    });
-                }
-                i = end + 2;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    out
-}
-
-fn parse_markdown_links(line: &str) -> Vec<Link> {
-    let bytes = line.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        let image = bytes[i] == b'!' && i + 1 < bytes.len() && bytes[i + 1] == b'[';
-        let link_start = if image { i + 1 } else { i };
-        if link_start < bytes.len() && bytes[link_start] == b'[' {
-            if let Some(label_end) = find_byte(bytes, link_start + 1, b']') {
-                if label_end + 1 < bytes.len() && bytes[label_end + 1] == b'(' {
-                    if let Some(dest_end) = find_byte(bytes, label_end + 2, b')') {
-                        if !image {
-                            let dest = &line[label_end + 2..dest_end];
-                            if let Some(target) = parse_markdown_target(dest) {
-                                let (base, suffix) = split_target_suffix(target);
-                                let key = document_key(base);
-                                if !key.is_empty() && super::path::is_document(base) {
-                                    out.push(Link {
-                                        line: 0,
-                                        kind: LinkKind::Markdown,
-                                        display_target: format!(
-                                            "{}{}",
-                                            display_target(base),
-                                            suffix
-                                        ),
-                                        target_key: key,
-                                        raw_target: raw_link_target(base),
-                                        resolved: None,
-                                        context: String::new(),
-                                    });
-                                }
-                            }
-                        }
-                        i = dest_end + 1;
-                        continue;
-                    }
-                }
-            }
-        }
-        i += 1;
-    }
-    out
-}
-
-fn is_link_only_line(line: &str) -> bool {
-    let spans = document_link_spans(line);
-    if spans.len() != 1 {
-        return false;
-    }
-    let (start, end) = spans[0];
-    let mut rest = String::with_capacity(line.len());
-    rest.push_str(&line[..start]);
-    rest.extend(std::iter::repeat_n(' ', end - start));
-    rest.push_str(&line[end..]);
-    !contains_letter_or_digit(&strip_line_only_markdown(&rest))
-}
-
-fn document_link_spans(line: &str) -> Vec<(usize, usize)> {
-    let masked = mask_inline_code(line);
-    let mut spans = Vec::new();
-    let bytes = masked.as_bytes();
-    let mut i = 0;
-    while i + 3 < bytes.len() {
-        if bytes[i] == b'[' && bytes[i + 1] == b'[' {
-            if let Some(end) = find_bytes(bytes, i + 2, b"]]") {
-                let (target, _, _, _) = split_wiki_link_parts(&masked[i + 2..end]);
-                let (base, _) = split_target_suffix(target.trim());
-                if !document_key(base).is_empty() {
-                    spans.push((i, end + 2));
-                }
-                i = end + 2;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'!' {
-            i += 1;
-            continue;
-        }
-        if bytes[i] == b'[' {
-            if let Some(label_end) = find_byte(bytes, i + 1, b']') {
-                if label_end + 1 < bytes.len() && bytes[label_end + 1] == b'(' {
-                    if let Some(dest_end) = find_byte(bytes, label_end + 2, b')') {
-                        if let Some(target) =
-                            parse_markdown_target(&masked[label_end + 2..dest_end])
-                        {
-                            let (base, _) = split_target_suffix(target);
-                            if !document_key(base).is_empty() {
-                                spans.push((i, dest_end + 1));
-                            }
-                        }
-                        i = dest_end + 1;
-                        continue;
-                    }
-                }
-            }
-        }
-        i += 1;
-    }
-    spans.sort_unstable();
-    spans
+    (links, issues)
 }
 
 pub(crate) fn split_wiki_link_parts(inner: &str) -> (&str, &str, bool, bool) {
@@ -235,29 +92,6 @@ fn has_escaped_pipe(bytes: &[u8], pipe: usize) -> bool {
     slashes % 2 == 1
 }
 
-pub(crate) fn parse_markdown_target(dest: &str) -> Option<&str> {
-    let dest = dest.trim_start_matches([' ', '\t']);
-    if dest.is_empty() {
-        return None;
-    }
-    let target = if let Some(rest) = dest.strip_prefix('<') {
-        let end = rest.find('>')?;
-        &rest[..end]
-    } else {
-        dest.split([' ', '\t']).next().unwrap_or("")
-    }
-    .trim();
-    if target.is_empty()
-        || target.starts_with('#')
-        || target.contains("://")
-        || target.starts_with("mailto:")
-    {
-        None
-    } else {
-        Some(target)
-    }
-}
-
 pub(crate) fn split_target_suffix(target: &str) -> (&str, &str) {
     if let Some(idx) = target.find('#') {
         (&target[..idx], &target[idx..])
@@ -279,19 +113,4 @@ fn raw_link_target(base: &str) -> String {
     let value = base.trim().trim_matches(['<', '>']).trim();
     let (base, _) = split_target_suffix(value);
     base.trim().to_string()
-}
-
-pub(crate) fn wrap_wiki_link(
-    target: &str,
-    label: &str,
-    has_label: bool,
-    escaped_separator: bool,
-) -> String {
-    if !has_label {
-        format!("[[{target}]]")
-    } else if escaped_separator {
-        format!("[[{target}\\|{label}]]")
-    } else {
-        format!("[[{target}|{label}]]")
-    }
 }

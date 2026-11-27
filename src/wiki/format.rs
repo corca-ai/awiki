@@ -1,10 +1,10 @@
-use std::fs;
-
-use super::Vault;
-use crate::{
-    text::{fence_start, next_fence_state, scan_lines, trim_line},
-    wiki::links::split_wiki_link_parts,
+use super::{
+    changes::{Change, ChangePlan},
+    links::split_wiki_link_parts,
+    markdown::{label_end, replace_ranges, Markdown},
+    LinkKind, Vault,
 };
+use crate::text::{scan_lines, trim_line};
 
 pub(crate) struct FormatReport {
     pub(crate) documents: usize,
@@ -13,26 +13,38 @@ pub(crate) struct FormatReport {
 
 impl Vault {
     pub(crate) fn format(&self) -> Result<FormatReport, String> {
+        let (plan, report) = self.plan_format();
+        plan.apply()?;
+        Ok(report)
+    }
+    pub(crate) fn plan_format(&self) -> (ChangePlan, FormatReport) {
+        let mut plan = ChangePlan::new(&self.root);
         let mut changed = Vec::new();
         for doc in &self.documents {
-            let content = fs::read_to_string(&doc.path)
-                .map_err(|e| format!("{}: {e}", doc.path.display()))?;
-            let formatted = format_markdown_document(&content);
-            if formatted != content {
-                fs::write(&doc.path, formatted)
-                    .map_err(|e| format!("{}: {e}", doc.path.display()))?;
+            let formatted = format_markdown_document(&doc.content, &doc.markdown);
+            if formatted != doc.content {
+                plan.changes.push(Change {
+                    from: doc.path.clone(),
+                    to: doc.path.clone(),
+                    before: doc.content.clone(),
+                    after: formatted,
+                });
                 changed.push(doc.rel_path.clone());
             }
         }
-        Ok(FormatReport {
-            documents: self.documents.len(),
-            changed,
-        })
+        (
+            plan,
+            FormatReport {
+                documents: self.documents.len(),
+                changed,
+            },
+        )
     }
 }
 
-pub(super) fn format_markdown_document(content: &str) -> String {
-    let (frontmatter, body) = split_frontmatter(content);
+pub(super) fn format_markdown_document(content: &str, parsed: &Markdown) -> String {
+    let normalized = format_links(content, parsed);
+    let (frontmatter, body) = split_frontmatter(&normalized);
     let mut out = String::new();
     if let Some(lines) = frontmatter {
         out.push_str(&format_frontmatter(lines));
@@ -257,20 +269,20 @@ fn format_yaml_scalar(value: &str) -> String {
 
 fn format_body(content: &str) -> String {
     let mut lines = Vec::new();
-    let mut in_fence = false;
-    let mut fence_marker = '\0';
-    let mut fence_width = 0usize;
+    let parsed = Markdown::parse(content);
     let mut after_heading = false;
-    for (line, _, _) in scan_lines(content) {
+    for (line, start, end) in scan_lines(content) {
         let raw = trim_line(line);
-        if let Some((marker, width)) = fence_start(raw.trim()) {
-            push_body_line(&mut lines, raw.to_string(), &mut after_heading);
-            (in_fence, fence_marker, fence_width) =
-                next_fence_state(in_fence, fence_marker, fence_width, marker, width);
-            continue;
-        }
-        if in_fence {
+        if parsed
+            .verbatim
+            .iter()
+            .any(|range| range.start < end && range.end > start)
+        {
+            if after_heading {
+                push_blank(&mut lines);
+            }
             lines.push(raw.to_string());
+            after_heading = false;
             continue;
         }
         let formatted = format_body_line(raw.trim_end());
@@ -305,11 +317,7 @@ fn push_blank(lines: &mut Vec<String>) {
 }
 
 fn format_body_line(line: &str) -> String {
-    let mut line = normalize_heading(line).unwrap_or_else(|| normalize_list_marker(line));
-    if !line.contains('`') {
-        line = format_wiki_links(&format_markdown_links(&line));
-    }
-    line
+    normalize_heading(line).unwrap_or_else(|| normalize_list_marker(line))
 }
 
 fn normalize_heading(line: &str) -> Option<String> {
@@ -343,27 +351,27 @@ fn is_heading(line: &str) -> bool {
     normalize_heading(line).is_some()
 }
 
-fn format_wiki_links(line: &str) -> String {
-    let bytes = line.as_bytes();
-    let mut out = String::with_capacity(line.len());
-    let mut i = 0;
-    let mut last = 0;
-    while i + 3 < bytes.len() {
-        if bytes[i] == b'[' && bytes[i + 1] == b'[' {
-            if let Some(end) = crate::text::find_bytes(bytes, i + 2, b"]]") {
-                out.push_str(&line[last..i]);
-                out.push_str("[[");
-                out.push_str(&format_wiki_link_inner(&line[i + 2..end]));
-                out.push_str("]]");
-                i = end + 2;
-                last = i;
-                continue;
-            }
+fn format_links(content: &str, parsed: &Markdown) -> String {
+    let mut edits = Vec::new();
+    for link in &parsed.links {
+        let raw = &content[link.span.clone()];
+        let value = if link.kind == LinkKind::Wiki {
+            format!("[[{}]]", format_wiki_link_inner(&raw[2..raw.len() - 2]))
+        } else if link.inline {
+            let label = label_end(raw).expect("parsed inline label");
+            format!(
+                "[{}]({})",
+                raw[1..label].trim(),
+                raw[label + 2..raw.len() - 1].trim()
+            )
+        } else {
+            continue;
+        };
+        if raw != value {
+            edits.push((link.span.clone(), value));
         }
-        i += 1;
     }
-    out.push_str(&line[last..]);
-    out
+    replace_ranges(content, edits)
 }
 
 fn format_wiki_link_inner(inner: &str) -> String {
@@ -387,39 +395,6 @@ fn normalize_wiki_target(target: &str) -> String {
     } else {
         target.to_string()
     }
-}
-
-fn format_markdown_links(line: &str) -> String {
-    let bytes = line.as_bytes();
-    let mut out = String::with_capacity(line.len());
-    let mut i = 0;
-    let mut last = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'!' {
-            i += 1;
-            continue;
-        }
-        if bytes[i] == b'[' {
-            if let Some(label_end) = crate::text::find_byte(bytes, i + 1, b']') {
-                if label_end + 1 < bytes.len() && bytes[label_end + 1] == b'(' {
-                    if let Some(dest_end) = crate::text::find_byte(bytes, label_end + 2, b')') {
-                        out.push_str(&line[last..i]);
-                        out.push('[');
-                        out.push_str(line[i + 1..label_end].trim());
-                        out.push_str("](");
-                        out.push_str(line[label_end + 2..dest_end].trim());
-                        out.push(')');
-                        i = dest_end + 1;
-                        last = i;
-                        continue;
-                    }
-                }
-            }
-        }
-        i += 1;
-    }
-    out.push_str(&line[last..]);
-    out
 }
 
 fn ensure_final_newline(mut content: String) -> String {

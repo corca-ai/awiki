@@ -18,9 +18,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install repository Rust toolchain
+        run: rustup show active-toolchain
 
       - uses: Swatinem/rust-cache@v2
 
@@ -53,6 +52,10 @@ jobs:
         run: cargo build --locked --release
       - name: test
         run: cargo test --locked --release
+      - name: lint repository documentation
+        run: |
+          target/release/awiki lint docs/
+          target/release/awiki lint -recursive
 
   msrv:
     name: minimum supported rust version
@@ -72,7 +75,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install repository Rust toolchain
+        run: rustup show active-toolchain
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-machete,cargo-deny

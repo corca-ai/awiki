@@ -3,15 +3,15 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-cleanup() { rm -rf .tmp-bin; }
-trap cleanup EXIT
-
 echo "Running format check..."
 cargo fmt --all --check
 
 echo "Running tests..."
 cargo test --locked
 
-echo "Building awiki..."
-mkdir -p .tmp-bin
-AWIKI_BUILD_OUTPUT=.tmp-bin/awiki AWIKI_SKIP_LINK=1 ./scripts/build.sh
+echo "Building development awiki..."
+cargo build --locked
+
+echo "Checking wiki documentation..."
+target/debug/awiki lint docs/
+target/debug/awiki lint -recursive

@@ -274,7 +274,8 @@ fn load_document(path: &Path, rel_file: &str, recursive: bool) -> Result<Documen
         document_key(&rel_path)
     };
     let front_matter = parse_front_matter(&content);
-    let (links, link_only) = parse_document_links(&content, &front_matter);
+    let markdown = super::markdown::Markdown::parse(&content);
+    let (links, link_only) = parse_document_links(&content, &markdown);
     Ok(Document {
         name,
         key,
@@ -284,5 +285,7 @@ fn load_document(path: &Path, rel_file: &str, recursive: bool) -> Result<Documen
         links,
         link_only,
         front_matter,
+        content,
+        markdown,
     })
 }

@@ -12,6 +12,7 @@ pub(crate) enum LinkKind {
 #[derive(Clone, Debug)]
 pub(crate) struct Link {
     pub(crate) line: usize,
+    pub(crate) column: usize,
     pub(crate) kind: LinkKind,
     pub(crate) display_target: String,
     pub(crate) target_key: String,
@@ -36,6 +37,8 @@ pub(crate) struct LinkOnlyLine {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Document {
+    pub(crate) content: String,
+    pub(crate) markdown: super::markdown::Markdown,
     pub(crate) name: String,
     pub(crate) key: String,
     pub(crate) path: PathBuf,

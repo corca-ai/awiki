@@ -1,0 +1,9 @@
+# Primary docs check: awiki lint docs/
+# Also check root documents: awiki lint -recursive
+[lint.rules]
+orphan = "error"
+island = "error"
+link-only-line = "error"
+broken-document-link = "error"
+first-block-paragraph = "error"
+broken-code-reference = "error"
