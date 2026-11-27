@@ -10,3 +10,7 @@ formula = "awiki"
 publish-jobs = ["homebrew"]
 allow-dirty = ["ci"]
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+
+# Keep Apple Silicon builds on a supported GitHub-hosted image.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"

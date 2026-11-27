@@ -31,6 +31,8 @@ Current release configuration assumes:
 - GitHub repository: `corca-ai/awiki`
 - Homebrew tap: `corca-ai/homebrew-tap`
 - Homebrew formula: `awiki`
+- Apple Silicon release builds use the `macos-15` runner configured in
+  `dist-workspace.toml`
 - CI secret: `HOMEBREW_TAP_TOKEN` with push access to the tap
 
 If those change, update `dist-workspace.toml`, `.github/workflows/release.yml`,
